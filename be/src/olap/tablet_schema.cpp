@@ -268,6 +268,7 @@ TabletColumn::TabletColumn(FieldAggregationMethod agg, FieldType filed_type, boo
     _is_nullable = is_nullable;
 }
 
+/*使用ColumnPB对象初始化schema中的列（TabletColumn对象）*/
 void TabletColumn::init_from_pb(const ColumnPB& column) {
     _unique_id = column.unique_id();
     _col_name = column.name();
@@ -337,16 +338,17 @@ void TabletColumn::to_schema_pb(ColumnPB* column) {
     }
 }
 
+/*使用TabletSchemaPB对象初始化TabletSchema对象tablet schema*/
 void TabletSchema::init_from_pb(const TabletSchemaPB& schema) {
     _keys_type = schema.keys_type();
-    _num_columns = 0;
-    _num_key_columns = 0;
-    _num_null_columns = 0;
+    _num_columns = 0; //schema中的列数目
+    _num_key_columns = 0; //schema中列为key的列数目
+    _num_null_columns = 0;//schema中可以为null值的列数目
     _cols.clear();
-    for (auto& column_pb : schema.column()) {
+    for (auto& column_pb : schema.column()) { //遍历TabletSchemaPB对象中的所有列
         TabletColumn column;
-        column.init_from_pb(column_pb);
-        _cols.push_back(column);
+        column.init_from_pb(column_pb); //使用ColumnPB对象初始化schema中的列
+        _cols.push_back(column); //将该列添加到成员变量_cols中
         _num_columns++;
         if (column.is_key()) {
             _num_key_columns++;

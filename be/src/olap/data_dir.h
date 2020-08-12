@@ -121,6 +121,9 @@ public:
     bool reach_capacity_limit(int64_t incoming_data_size);
 
     Status update_capacity();
+    /*****************************************/
+    std::set<TabletInfo> tablet_set() { return _tablet_set; }
+    /*****************************************/
 
 private:
     std::string _cluster_id_path() const { return _path + CLUSTER_ID_PREFIX; }

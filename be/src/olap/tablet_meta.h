@@ -46,20 +46,20 @@ namespace doris {
 
 enum TabletState {
     // Tablet is under alter table, rollup, clone
-    TABLET_NOTREADY,
+    TABLET_NOTREADY, //tablet处于alter table， roolup或clone状态中
 
-    TABLET_RUNNING,
+    TABLET_RUNNING, //tablet处于正常运行状态
 
     // Tablet integrity has been violated, such as missing versions.
     // In this state, tablet will not accept any incoming request.
     // Report this state to FE, scheduling BE to drop tablet.
-    TABLET_TOMBSTONED,
+    TABLET_TOMBSTONED, //tablet的完整性被破坏，比如缺少版本信息。在这种状态下，tablet不会接受任何传入的请求，需要把这个状态报告给FE来调度BE删除该tablet。
 
     // Tablet is shutting down, files in disk still remained.
-    TABLET_STOPPED,
+    TABLET_STOPPED, //tablet被关闭，磁盘上的文件还存在
 
     // Files have been removed, tablet has been shutdown completely.
-    TABLET_SHUTDOWN
+    TABLET_SHUTDOWN //tablet被完全删除，磁盘上的文件也已经删除
 };
 
 class RowsetMeta;
@@ -273,22 +273,25 @@ inline void TabletMeta::set_cumulative_layer_point(int64_t new_point) {
     _cumulative_layer_point = new_point;
 }
 
+/*获取tablet中的数据行数*/
 inline size_t TabletMeta::num_rows() const {
     size_t num_rows = 0;
-    for (auto& rs : _rs_metas) {
+    for (auto& rs : _rs_metas) { //遍历tablet中所有的rowset的meta信息，获取每一个rowset的数据行数
         num_rows += rs->num_rows();
     }
     return num_rows;
 }
 
+/*获取tablet中的数据大小*/
 inline size_t TabletMeta::tablet_footprint() const {
     size_t total_size = 0;
-    for (auto& rs : _rs_metas) {
+    for (auto& rs : _rs_metas) { //遍历tablet中所有的rowset的meta信息，获取每一个rowset的数据大小
         total_size += rs->data_disk_size();
     }
     return total_size;
 }
 
+/*获取tablet中rowset的数量*/
 inline size_t TabletMeta::version_count() const {
     return _rs_metas.size();
 }

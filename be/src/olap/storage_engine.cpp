@@ -478,6 +478,22 @@ std::vector<DataDir*> StorageEngine::get_stores_for_create_tablet(TStorageMedium
     std::random_device rd;//标准库提供了一个非确定性随机数生成设备.在Linux的实现中,是读取/dev/urandom设备
     srand(rd());
     std::random_shuffle(stores.begin(), stores.end());//随机打乱vector中data dir的顺序（创建tablet时，会从向量stores中的第一个磁盘开始尝试，直到创建成功。此处打乱stores中磁盘的顺序，目的是创建tablet时让磁盘的选择是随机的）
+
+    // two random choices
+    for(int i=0; i < stores.size();) {
+		int j =i + 1;
+		if(j < stores.size())
+		{
+			if(stores[i]->tablet_set().size() > stores[j]->tablet_set().size())
+			{
+				std::swap(stores[i], stores[j]);
+			}
+			i = i + 2;
+		}else{
+			break;
+		}
+    }
+
     return stores;
 }
 
@@ -965,14 +981,14 @@ OLAPStatus StorageEngine::load_header(const string& shard_path, const TCloneReq&
         }
     }
 
-    stringstream schema_hash_path_stream;
+    stringstream schema_hash_path_stream; // schema hash路径：{shard_path}/{tablet_id}/{schema_hash}
     schema_hash_path_stream << shard_path
                             << "/" << request.tablet_id
                             << "/" << request.schema_hash;
     // not surely, reload and restore tablet action call this api
     // reset tablet uid here
 
-    string header_path = TabletMeta::construct_header_file_path(schema_hash_path_stream.str(), request.tablet_id);
+    string header_path = TabletMeta::construct_header_file_path(schema_hash_path_stream.str(), request.tablet_id); //构建header文件(tablet meta)的存储路径
     res = TabletMeta::reset_tablet_uid(header_path);
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "fail reset tablet uid file path = " << header_path

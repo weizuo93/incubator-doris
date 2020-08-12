@@ -235,9 +235,11 @@ public:
     ExtraType* mutable_extra() {
         return &_extra_fixed_header;
     }
+    /*返回的消息不可修改*/
     const MessageType& message() const {
         return _proto;
     }
+    /*返回可修改的消息*/
     MessageType* mutable_message() {
         return &_proto;
     }

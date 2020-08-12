@@ -234,7 +234,7 @@ OLAPStatus TabletManager::create_tablet(const TCreateTabletReq& request, std::ve
             return OLAP_SUCCESS;
         } else {
             //与创建要求具有相同tablet id的tablet已经存在，但是拥有不同的schema hash，创建失败，函数返回
-            //如果某个tablet id已经存在，那么就不能再创建相同id的tablet。具有相同id的tablet只能是通过base tablet进行alter schema得到。
+            //如果某个tablet id已经存在，那么就不能再创建相同id的tablet。(具有相同id的tablet只能是通过base tablet进行alter schema得到???????)
             LOG(WARNING) << "fail to create tablet. tablet exist but with different schema_hash. "
                     << "tablet_id=" << tablet_id << ", schema_hash=" << schema_hash;
             DorisMetrics::instance()->create_tablet_requests_failed.increment(1);
@@ -862,7 +862,7 @@ OLAPStatus TabletManager::load_tablet_from_dir(DataDir* store, TTabletId tablet_
               << " restore = " << restore;
     //（1）首先，根据tablet_id以及schema_hash_path生成tablet meta的存储路径
     // not add lock here, because load_tablet_from_meta already add lock
-    string header_path = TabletMeta::construct_header_file_path(schema_hash_path, tablet_id);//构建header文件的路径
+    string header_path = TabletMeta::construct_header_file_path(schema_hash_path, tablet_id);//构建header文件的存储路径
     // should change shard id before load tablet
     string shard_path = path_util::dir_name(path_util::dir_name(path_util::dir_name(header_path)));//构建shard路径
     string shard_str = shard_path.substr(shard_path.find_last_of('/') + 1);
