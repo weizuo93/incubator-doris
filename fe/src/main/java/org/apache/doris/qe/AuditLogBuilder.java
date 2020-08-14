@@ -56,6 +56,9 @@ public class AuditLogBuilder extends Plugin implements AuditPlugin {
         return type == EventType.AFTER_QUERY;
     }
 
+    /*fe.audit.log文件存放在FE节点的fe/log/路径下，每一个sql语句都会向fe.audit.log文件中写一行：
+      2020-08-14 16:07:30,318 [query] |Client=10.232.52.134:39658|User=root|Db=default_cluster:test_db|State=EOF|Time=3597|ScanBytes=6925|ScanRows=1560|ReturnRows=780|StmtId=3|QueryId=91696f9bc40a4aef-a04c3d3b876831e9|IsQuery=true|feIp=10.38.163.97|Stmt=select * from table2
+    */
     @Override
     public void exec(AuditEvent event) {
         try {

@@ -54,7 +54,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     private StringBuilder auditBuffer = new StringBuilder();
     private long lastLoadTime = 0;
 
-    private BlockingQueue<StringBuilder> batchQueue = new LinkedBlockingDeque<StringBuilder>(1);
+    private BlockingQueue<StringBuilder> batchQueue = new LinkedBlockingDeque<StringBuilder>(1);//LinkedBlockingDeque是一个可选容量的阻塞队列，如果没有设置容量，那么容量将是Int的最大值。
     private DorisStreamLoader streamLoader;
     private Thread loadThread;
 
@@ -69,8 +69,10 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     public void init(PluginInfo info, PluginContext ctx) throws PluginException {
         super.init(info, ctx);
 
+        /*Synchronized是Java并发编程中的同步机制关键字，它能后保证同一个时刻只有一条线程能够执行被关键字修饰的代码，其他线程就会在队列中进行等待，
+          等待这条线程执行完毕后，下一条线程才能对执行这段代码。*/
         synchronized (this) {
-            if (isInit) {
+            if (isInit) { //只能被初始化一次
                 return;
             }
             this.lastLoadTime = System.currentTimeMillis();
@@ -91,19 +93,19 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
             throw new PluginException("plugin path does not exist: " + pluginPath);
         }
 
-        Path confFile = pluginPath.resolve("plugin.conf");
+        Path confFile = pluginPath.resolve("plugin.conf"); //合并路径:{根目录}.resolve({子路径})
         if (!Files.exists(confFile)) {
             throw new PluginException("plugin conf file does not exist: " + confFile);
         }
 
-        final Properties props = new Properties();
-        try (InputStream stream = Files.newInputStream(confFile)) {
-            props.load(stream);
+        final Properties props = new Properties(); //Properties继承于Hashtable,表示一个持久的属性集,属性列表中每个键及其对应值都是一个字符串，属性可以被保存到一个流或从流中加载的类。
+        try (InputStream stream = Files.newInputStream(confFile)) { //从一个文件中读取数据到输入流中（使用无缓存的流）
+            props.load(stream); //从输入流中读取属性列表
         } catch (IOException e) {
             throw new PluginException(e.getMessage());
         }
-        final Map<String, String> properties = props.stringPropertyNames().stream()
-                .collect(Collectors.toMap(Function.identity(), props::getProperty));
+        //将插件的配置属性保存在 map 中
+        final Map<String, String> properties = props.stringPropertyNames().stream().collect(Collectors.toMap(Function.identity(), props::getProperty));
 
         conf = new AuditLoaderConf();
         conf.init(properties);
@@ -239,12 +241,12 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         public void run() {
             while (!isClosed) {
                 try {
-                    StringBuilder batch = batchQueue.poll(5, TimeUnit.SECONDS);
+                    StringBuilder batch = batchQueue.poll(5, TimeUnit.SECONDS);//移除并返回队列头部的元素。如果有元素，则直接出队;如果队列为空，则判断是否超时，超时返回null，未超时则接着等待，直到队列不为空或等待超时或被中断。
                     if (batch == null) {
                         continue;
                     }
 
-                    DorisStreamLoader.LoadResponse response = loader.loadBatch(batch);
+                    DorisStreamLoader.LoadResponse response = loader.loadBatch(batch);//使用Stream Loader的方式将batch数据批量加载到doris 的表中存储。
                     LOG.debug("audit loader response: {}", response);
                 } catch (InterruptedException e) {
                     LOG.debug("encounter exception when loading current audit batch", e);

@@ -113,7 +113,7 @@ OLAPStatus TabletMetaManager::save(DataDir* store, TTabletId tablet_id, TSchemaH
     LOG(INFO) << "save tablet meta " 
               << ", key:" << key
               << " meta_size=" << meta_binary.length();
-    return meta->put(META_COLUMN_FAMILY_INDEX, key, meta_binary);//将参数传入的tablet meta信息以K-V形式存储在data dir上
+    return meta->put(META_COLUMN_FAMILY_INDEX, key, meta_binary);//将参数传入的tablet meta信息以K-V形式put到Rocksdb上存储
 }
 
 /*根据Key，从data dir上将tablet mate信息删除*/

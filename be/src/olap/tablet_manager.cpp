@@ -411,10 +411,11 @@ static string _gen_tablet_dir(const string& dir, int16_t shard_id, int64_t table
 TabletSharedPtr TabletManager::_create_tablet_meta_and_dir_unlocked(const TCreateTabletReq& request, const bool is_schema_change, const Tablet* base_tablet, const std::vector<DataDir*>& data_dirs) {
     string pending_id = StrCat(TABLET_ID_PREFIX, request.tablet_id);//olap_define.h文件中定义：const std::string TABLET_ID_PREFIX = "t_";
     // Many attempts are made here in the hope that even if a disk fails, it can still continue.
-    DataDir* last_dir = nullptr;
+    DataDir* last_dir = nullptr; //保存上一次尝试创建tablet meta的磁盘
     for (auto& data_dir : data_dirs) {
         if (last_dir != nullptr) {
             // If last_dir != null, it means the last attempt to create a tablet failed
+            //如果last_dir不为null，表示在前一块磁盘上创建tablet meta的尝试失败了
             last_dir->remove_pending_ids(pending_id);
         }
         last_dir = data_dir;

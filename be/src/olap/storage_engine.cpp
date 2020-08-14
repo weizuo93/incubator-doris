@@ -478,22 +478,18 @@ std::vector<DataDir*> StorageEngine::get_stores_for_create_tablet(TStorageMedium
     std::random_device rd;//标准库提供了一个非确定性随机数生成设备.在Linux的实现中,是读取/dev/urandom设备
     srand(rd());
     std::random_shuffle(stores.begin(), stores.end());//随机打乱vector中data dir的顺序（创建tablet时，会从向量stores中的第一个磁盘开始尝试，直到创建成功。此处打乱stores中磁盘的顺序，目的是创建tablet时让磁盘的选择是随机的）
-
-    // two random choices
-    for(int i=0; i < stores.size();) {
-		int j =i + 1;
-		if(j < stores.size())
-		{
-			if(stores[i]->tablet_set().size() > stores[j]->tablet_set().size())
-			{
-				std::swap(stores[i], stores[j]);
-			}
-			i = i + 2;
-		}else{
-			break;
-		}
+    // Two random choices
+    for (int i = 0; i < stores.size(); i++) {
+        int j = i + 1;
+        if (j < stores.size()) {
+            if (stores[i]->tablet_set().size() > stores[j]->tablet_set().size()) {
+                std::swap(stores[i], stores[j]);
+            }
+            std::random_shuffle(stores.begin() + j, stores.end());
+        } else {
+            break;
+        }
     }
-
     return stores;
 }
 

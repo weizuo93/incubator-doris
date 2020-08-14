@@ -49,7 +49,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
  *      curl -X GET http://fe_host:http_port/api/get_log_file?type=fe.audit.log&file=fe.audit.log.20190528.1
  */
 public class GetLogFileAction extends RestBaseAction {
-    private final Set<String> logFileTypes = Sets.newHashSet("fe.audit.log");
+    private final Set<String> logFileTypes = Sets.newHashSet("fe.audit.log"); //newHashSet(E... elements)：返回一个可变买的HashSet包含给定的元素
 
     public GetLogFileAction(ActionController controller) {
         super(controller);
@@ -102,7 +102,7 @@ public class GetLogFileAction extends RestBaseAction {
     private String getFileInfos(String logType) {
         Map<String, Long> fileInfos = Maps.newTreeMap();
         if (logType.equals("fe.audit.log")) {
-            File logDir = new File(Config.audit_log_dir);
+            File logDir = new File(Config.audit_log_dir);//文件fe/src/main/java/org/apache/doris/common/Config.java中定义了audit_log_dir的路径为：{PaloFe.DORIS_HOME_DIR}/log/
             File[] files = logDir.listFiles();
             for (int i = 0; i < files.length; i++) {
                 if (files[i].isFile() && files[i].getName().startsWith("fe.audit.log")) {
