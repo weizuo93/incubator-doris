@@ -69,8 +69,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     public void init(PluginInfo info, PluginContext ctx) throws PluginException {
         super.init(info, ctx);
 
-        /*Synchronized是Java并发编程中的同步机制关键字，它能后保证同一个时刻只有一条线程能够执行被关键字修饰的代码，其他线程就会在队列中进行等待，
-          等待这条线程执行完毕后，下一条线程才能对执行这段代码。*/
+        /*Synchronized是Java并发编程中的同步机制关键字，它能够保证同一个时刻只有一条线程能够执行被关键字修饰的代码，其他线程就会在队列中进行等待，
+          等待这条线程执行完毕后，下一条线程才能够执行这段代码。*/
         synchronized (this) {
             if (isInit) { //只能被初始化一次
                 return;
@@ -87,6 +87,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         }
     }
 
+    /*加载配置文件plugin.conf*/
     private void loadConfig(PluginContext ctx) throws PluginException {
         Path pluginPath = FileSystems.getDefault().getPath(ctx.getPluginPath());
         if (!Files.exists(pluginPath)) {
@@ -108,10 +109,11 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         final Map<String, String> properties = props.stringPropertyNames().stream().collect(Collectors.toMap(Function.identity(), props::getProperty));
 
         conf = new AuditLoaderConf();
-        conf.init(properties);
+        conf.init(properties);// 使用properties（根据plugin.conf中的条目）初始化类AuditLoaderConf的成员函数
         conf.feIdentity = ctx.getFeIdentity();
     }
 
+    /*关闭插件*/
     @Override
     public void close() throws IOException {
         super.close();
@@ -134,6 +136,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         loadIfNecessary();
     }
 
+    /*将audit日志中的一条记录添加到StringBuilder中*/
     private void assembleAudit(AuditEvent event) {
         auditBuffer.append(event.queryId).append("\t");
         auditBuffer.append(longToTimeString(event.timestamp)).append("\t");
@@ -156,12 +159,14 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(stmt).append("\n");
     }
 
+    /*添加数据到队列batchQueue中供LoadWorker类中将数据批量加载到doris使用*/
     private void loadIfNecessary() {
+        //如果当前auditBuffer中的数据量小于某一个阈值或此时距离上一次数据加载的时间间隔小于某一个阈值时，那么此时不加载数据到batchQueue
         if (auditBuffer.length() < conf.maxBatchSize && System.currentTimeMillis() - lastLoadTime < conf.maxBatchIntervalSec * 1000) {
             return;
         }
 
-        lastLoadTime = System.currentTimeMillis();
+        lastLoadTime = System.currentTimeMillis();//记录当前的数据加载时间
         // begin to load
         try {
             if (!batchQueue.isEmpty()) {
@@ -172,17 +177,18 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
                 throw new PluginException("The previous batch is not processed, and the current batch is discarded.");
             }
 
-            batchQueue.put(this.auditBuffer);
+            batchQueue.put(this.auditBuffer);//将auditBuffer中的审计数据添加到队列batchQueue中
         } catch (Exception e) {
             LOG.debug("encounter exception when putting current audit batch, discard current batch", e);
         } finally {
             // make a new string builder to receive following events.
-            this.auditBuffer = new StringBuilder();
+            this.auditBuffer = new StringBuilder();//清空auditBuffer
         }
 
         return;
     }
 
+    /*定义AuditLoaderConf类，类中成员函数用来保存plugin.conf中的配置数据*/
     public static class AuditLoaderConf {
         public static final String PROP_MAX_BATCH_SIZE = "max_batch_size";
         public static final String PROP_MAX_BATCH_INTERVAL_SEC = "max_batch_interval_sec";
@@ -202,6 +208,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         // the identity of FE which run this plugin
         public String feIdentity = "";
 
+        //根据plugin.conf中的条目初始化类AuditLoaderConf的成员函数
         public void init(Map<String, String> properties) throws PluginException {
             try {
                 if (properties.containsKey(PROP_MAX_BATCH_SIZE)) {
@@ -231,6 +238,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         }
     }
 
+    /*向Doris中加载audit.log中的数据：从队列中读取batch数据，并将batch数据加载到doris表中*/
     private class LoadWorker implements Runnable {
         private DorisStreamLoader loader;
 
@@ -256,6 +264,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         }
     }
 
+    /*将sql查询时机器生成的时间戳转化成日期时间*/
     public static synchronized String longToTimeString(long timeStamp) {
         if (timeStamp <= 0L) {
             return "1900-01-01 00:00:00";
