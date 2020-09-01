@@ -306,8 +306,7 @@ RowsetSharedPtr Tablet::_rowset_with_largest_size() {
         if (it.second->empty() || it.second->zero_num_rows()) {
             continue;
         }
-        if (largest_rowset == nullptr || it.second->rowset_meta()->index_disk_size()
-                > largest_rowset->rowset_meta()->index_disk_size()) {
+        if (largest_rowset == nullptr || it.second->rowset_meta()->index_disk_size() > largest_rowset->rowset_meta()->index_disk_size()) {
             largest_rowset = it.second;
         }
     }
@@ -335,8 +334,7 @@ OLAPStatus Tablet::add_inc_rowset(const RowsetSharedPtr& rowset) {
 }
 
 /*通过版本号从tablet（实质上是成员变量_inc_rs_version_map）中删除对应的rowset*/
-void Tablet::_delete_inc_rowset_by_version(const Version& version,
-                                           const VersionHash& version_hash) {
+void Tablet::_delete_inc_rowset_by_version(const Version& version, const VersionHash& version_hash) {
     // delete incremental rowset from map
     _inc_rs_version_map.erase(version);//从成员变量_inc_rs_version_map中删除对应版本的rowset
 
@@ -424,18 +422,16 @@ void Tablet::list_versions(vector<Version>* versions) const {
     }
 }
 
-OLAPStatus Tablet::capture_consistent_rowsets(const Version& spec_version,
-                                              vector<RowsetSharedPtr>* rowsets) const {
+OLAPStatus Tablet::capture_consistent_rowsets(const Version& spec_version, vector<RowsetSharedPtr>* rowsets) const {
     vector<Version> version_path;
     RETURN_NOT_OK(capture_consistent_versions(spec_version, &version_path));
     RETURN_NOT_OK(_capture_consistent_rowsets_unlocked(version_path, rowsets));
     return OLAP_SUCCESS;
 }
 
-OLAPStatus Tablet::_capture_consistent_rowsets_unlocked(const vector<Version>& version_path,
-                                                        vector<RowsetSharedPtr>* rowsets) const {
+OLAPStatus Tablet::_capture_consistent_rowsets_unlocked(const vector<Version>& version_path, vector<RowsetSharedPtr>* rowsets) const {
     DCHECK(rowsets != nullptr && rowsets->empty());
-    rowsets->reserve(version_path.size());
+    rowsets->reserve(version_path.size()); //reserve函数用来给vector预分配存储区大小，即capacity的值 ，但是没有给这段内存进行初始化。
     for (auto& version : version_path) {
         auto it = _rs_version_map.find(version);
         if (it == _rs_version_map.end()) {
@@ -607,8 +603,7 @@ void Tablet::calc_missed_versions(int64_t spec_version, vector<Version>* missed_
 // for example:
 //     [0-4][5-5][8-8][9-9]
 // if spec_version = 6, we still return {6, 7} other than {7}
-void Tablet::calc_missed_versions_unlocked(int64_t spec_version,
-                                           vector<Version>* missed_versions) const {
+void Tablet::calc_missed_versions_unlocked(int64_t spec_version, vector<Version>* missed_versions) const {
     DCHECK(spec_version > 0) << "invalid spec_version: " << spec_version;
     std::list<Version> existing_versions;
     for (auto& rs : _tablet_meta->all_rs_metas()) {
@@ -646,8 +641,7 @@ void Tablet::max_continuous_version_from_begining(Version* version, VersionHash*
     _max_continuous_version_from_begining_unlocked(version, v_hash);
 }
 
-void Tablet::_max_continuous_version_from_begining_unlocked(Version* version,
-                                                             VersionHash* v_hash) const {
+void Tablet::_max_continuous_version_from_begining_unlocked(Version* version, VersionHash* v_hash) const {
     vector<pair<Version, VersionHash>> existing_versions;
     for (auto& rs : _tablet_meta->all_rs_metas()) {
         existing_versions.emplace_back(rs->version() , rs->version_hash());
@@ -968,14 +962,15 @@ void Tablet::get_compaction_status(std::string* json_result) {
 /*进行tablet meta的checkpoint*/
 void Tablet::do_tablet_meta_checkpoint() {
     WriteLock store_lock(&_meta_store_lock);
-    if (_newly_created_rowset_num == 0) {
+    if (_newly_created_rowset_num == 0) { //没有新创建的rowset
         return;
     }
+    //距离上一次checkpoint的时间间隔没有超过某一个特定阈值，同时新创建的rowset数量没有超过某一个特定阈值，则不需要对tablet进行checkpoint
     if (UnixMillis() - _last_checkpoint_time < config::tablet_meta_checkpoint_min_interval_secs * 1000
         && _newly_created_rowset_num < config::tablet_meta_checkpoint_min_new_rowsets_num) {
         return;
     }
-
+    //距离上一次checkpoint的时间间隔超过某一个特定阈值，或者新创建的rowset数量超过某一个特定阈值，则需要对tablet进行checkpoint
     // hold read-lock other than write-lock, because it will not modify meta structure
     ReadLock rdlock(&_meta_lock);
     if (tablet_state() != TABLET_RUNNING) {
@@ -993,8 +988,7 @@ void Tablet::do_tablet_meta_checkpoint() {
         if(rs_meta->is_remove_from_rowset_meta()) {
             continue;
         }
-        if (RowsetMetaManager::check_rowset_meta(
-                    _data_dir->get_meta(), tablet_uid(), rs_meta->rowset_id())) {
+        if (RowsetMetaManager::check_rowset_meta(_data_dir->get_meta(), tablet_uid(), rs_meta->rowset_id())) {
             RowsetMetaManager::remove(_data_dir->get_meta(), tablet_uid(), rs_meta->rowset_id());
             LOG(INFO) << "remove rowset id from meta store because it is already persistent with tablet meta"
                        << ", rowset_id=" << rs_meta->rowset_id();
@@ -1016,7 +1010,7 @@ bool Tablet::rowset_meta_is_useful(RowsetMetaSharedPtr rowset_meta) {
             find_rowset_id = true;
         }
         if (version_rowset.second->contains_version(rowset_meta->version())) {
-            find_version = true;
+            find_version = true; // find_version为true表示参数传入的rowset已经经过compaction和其它的rowset完成了合并
         }
     }
     //是否通过成员变量_inc_rs_version_map找到参数传入的rowset id以及rowset 版本
@@ -1028,10 +1022,10 @@ bool Tablet::rowset_meta_is_useful(RowsetMetaSharedPtr rowset_meta) {
             find_version = true;
         }
     }
-    return find_rowset_id || !find_version;
+    return find_rowset_id || !find_version; //经过compaction的rowset会被标记为不可用
 }
 
-/*判断rowset是否存在，如果rowset的版本在成员变量_rs_version_map或_inc_rs_version_map中存在，则认为传入的rowset存在；否则，认为传入的rowset不存在*/
+/*判断tabet中特定的rowset是否存在，如果rowset的版本在成员变量_rs_version_map或_inc_rs_version_map中存在，则认为传入的rowset存在；否则，认为传入的rowset不存在*/
 bool Tablet::_contains_rowset(const RowsetId rowset_id) {
     for (auto& version_rowset : _rs_version_map) {
         if (version_rowset.second->rowset_id() == rowset_id) {
@@ -1055,17 +1049,17 @@ void Tablet::build_tablet_report_info(TTabletInfo* tablet_info) {
     tablet_info->data_size = _tablet_meta->tablet_footprint();
     Version version = { -1, 0 };
     VersionHash v_hash = 0;
-    _max_continuous_version_from_begining_unlocked(&version, &v_hash);
+    _max_continuous_version_from_begining_unlocked(&version, &v_hash); //计算从最小版本开始的最大连续版本
     auto max_rowset = rowset_with_max_version();
     if (max_rowset != nullptr) {
-        if (max_rowset->version() != version) {
+        if (max_rowset->version() != version) { //tablet中最大的rowset版本不等于从最小版本开始的最大连续版本，那么一定存在版本丢失
             tablet_info->__set_version_miss(true);
         }
     } else {
         // If the tablet is in running state, it must not be doing schema-change. so if we can not
         // access its rowsets, it means that the tablet is bad and needs to be reported to the FE
         // for subsequent repairs (through the cloning task)
-        if (tablet_state() == TABLET_RUNNING) {
+        if (tablet_state() == TABLET_RUNNING) { //如果tablet中最大版本的rowset为空，并且tablet的状态为Running，则需要将tablet设为不可用
             tablet_info->__set_used(false);
         }
         // For other states, FE knows that the tablet is in a certain change process, so here
@@ -1090,9 +1084,9 @@ void Tablet::generate_tablet_meta_copy(TabletMetaSharedPtr new_tablet_meta) cons
     TabletMetaPB tablet_meta_pb;
     {
         ReadLock rdlock(&_meta_lock);
-        _tablet_meta->to_meta_pb(&tablet_meta_pb);
+        _tablet_meta->to_meta_pb(&tablet_meta_pb); //将tablet的meta信息序列化为protobuf对象
     }
-    new_tablet_meta->init_from_pb(tablet_meta_pb);
+    new_tablet_meta->init_from_pb(tablet_meta_pb); //使用protobuf对象初始化tablet meta对象
 }
 
 }  // namespace doris

@@ -27,18 +27,21 @@
 ##############################################################
 
 set -eo pipefail
+#set -e 根据返回值来判断，一个命令是否运行失败,脚本只要发生错误，就终止执行；但是不适用于管道命令。所谓管道命令，就是多个子命令通过管道运算符（|）组合成为一个大的命令。
+# Bash 会把最后一个子命令的返回值，作为整个命令的返回值。也就是说，只要最后一个子命令不失败，管道命令总是会执行成功，因此它后面命令依然会执行，set -e就失效了。
+# set -o pipefail用来解决这种情况，只要一个子命令失败，整个管道命令就失败，脚本就会终止执行。
 
-ROOT=`dirname "$0"`
-ROOT=`cd "$ROOT"; pwd`
+ROOT=`dirname "$0"`    #获取当前shell脚本文件所在的目录（命令中“`”不是英文的单引号，而是英文输入法下的“~”同一个按键下面的那个符号。）
+ROOT=`cd "$ROOT"; pwd` #进入当前shell脚本文件所在的目录，并获取当前目录的路径
 
 export DORIS_HOME=${ROOT}
 
-. ${DORIS_HOME}/env.sh
+. ${DORIS_HOME}/env.sh  #执行${DORIS_HOME}/env.sh脚本，进行编译前的各项环境检查
 
 # build thirdparty libraries if necessary
-if [[ ! -f ${DORIS_THIRDPARTY}/installed/lib/libs2.a ]]; then
+if [[ ! -f ${DORIS_THIRDPARTY}/installed/lib/libs2.a ]]; then  #判断libs2.a文件是否存在，并且是否为普通文件
     echo "Thirdparty libraries need to be build ..."
-    ${DORIS_THIRDPARTY}/build-thirdparty.sh
+    ${DORIS_THIRDPARTY}/build-thirdparty.sh                    #执行脚本build-thirdparty.sh
 fi
 
 #PARALLEL=$[$(nproc)/4+1]
@@ -82,8 +85,8 @@ OPTS=$(getopt \
   -l 'help' \
   -- "$@")
 
-if [ $? != 0 ] ; then
-    usage
+if [ $? != 0 ] ; then   #“$?”表示上一条命令的返回状态，如果为0，表示上一条命令正确执行；如果非0，表示上一条命令执行不正确
+    usage               #执行usage()函数输出信息
 fi
 
 eval set -- "$OPTS"
@@ -95,7 +98,7 @@ RUN_UT=
 WITH_MYSQL=ON
 WITH_LZO=ON
 HELP=0
-if [ $# == 1 ] ; then
+if [ $# == 1 ] ; then  # “$#”表示命令行中所有参数的个数
     # defuat
     BUILD_BE=1
     BUILD_FE=1
@@ -150,7 +153,7 @@ if [ ${CLEAN} -eq 1 ]; then
    make clean
 fi
 # DO NOT using parallel make(-j) for gensrc
-make
+make             #执行${DORIS_HOME}/gensrc/目录下的Makefile文件，进行编译
 cd ${DORIS_HOME}
 
 # Clean and build Backend

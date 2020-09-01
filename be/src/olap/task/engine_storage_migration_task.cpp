@@ -36,6 +36,7 @@ OLAPStatus EngineStorageMigrationTask::execute() {
         _storage_medium_migrate_req.storage_medium);
 }
 
+/*将tablet迁移到特定介质类型的磁盘上*/
 OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
         TTabletId tablet_id, TSchemaHash schema_hash,
         TStorageMedium::type storage_medium) {
@@ -44,6 +45,7 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
               << ", dest_storage_medium=" << storage_medium;
     DorisMetrics::instance()->storage_migrate_requests_total.increment(1);
 
+    //根据tablet id和schema hash获取tablet
     OLAPStatus res = OLAP_SUCCESS;
     TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, schema_hash);
     if (tablet == nullptr) {
@@ -53,15 +55,15 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
     }
 
     // judge case when no need to migrate
-    uint32_t count = StorageEngine::instance()->available_storage_medium_type_count();
+    uint32_t count = StorageEngine::instance()->available_storage_medium_type_count();//获取当前BE节点上磁盘的数量
     if (count <= 1) {
         LOG(INFO) << "available storage medium type count is less than 1, "
                   << "no need to migrate. count=" << count;
         return OLAP_SUCCESS;
     }
 
-    TStorageMedium::type src_storage_medium = tablet->data_dir()->storage_medium();
-    if (src_storage_medium == storage_medium) {
+    TStorageMedium::type src_storage_medium = tablet->data_dir()->storage_medium(); //获取tablet当前所在的磁盘的介质类型
+    if (src_storage_medium == storage_medium) { //判断tablet当前所在的磁盘类型与要迁移的目的磁盘类型是否相同
         LOG(INFO) << "tablet is already on specified storage medium. "
                   << "storage_medium=" << storage_medium;
         return OLAP_SUCCESS;
@@ -72,11 +74,12 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
         return OLAP_ERR_RWLOCK_ERROR;
     }
 
+    //获取tablet相关的transaction
     int64_t partition_id;
     std::set<int64_t> transaction_ids;
     StorageEngine::instance()->txn_manager()->get_tablet_related_txns(tablet->tablet_id(), 
         tablet->schema_hash(), tablet->tablet_uid(), &partition_id, &transaction_ids);
-    if (transaction_ids.size() > 0) {
+    if (transaction_ids.size() > 0) { //如果存在与当前tablet相关的transaction，则tablet不能进行迁移
         LOG(WARNING) << "could not migration because has unfinished txns, "
                      << " tablet=" << tablet->full_name();
         return OLAP_ERR_HEADER_HAS_PENDING_DATA;
@@ -88,7 +91,7 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
     do {
         // get all versions to be migrate
         tablet->obtain_header_rdlock();
-        const RowsetSharedPtr lastest_version = tablet->rowset_with_max_version();
+        const RowsetSharedPtr lastest_version = tablet->rowset_with_max_version();//获取tablet最新版本的rowset
         if (lastest_version == nullptr) {
             tablet->release_header_lock();
             res = OLAP_ERR_VERSION_NOT_EXIST;
@@ -108,31 +111,31 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
         }
         tablet->release_header_lock();
 
-        // get a random store of specified storage medium
-        auto stores = StorageEngine::instance()->get_stores_for_create_tablet(storage_medium);
+        // 随机获取特定介质类型的磁盘 get a random store of specified storage medium
+        auto stores = StorageEngine::instance()->get_stores_for_create_tablet(storage_medium); //随机获取特定介质类型的磁盘
         if (stores.empty()) {
             res = OLAP_ERR_INVALID_ROOT_PATH;
             LOG(WARNING) << "fail to get root path for create tablet.";
             break;
         }
 
-        // check disk capacity
-        int64_t tablet_size = tablet->tablet_footprint();
+        // tablet迁移之后是否超过目标磁盘容量上限  check disk capacity
+        int64_t tablet_size = tablet->tablet_footprint(); //获取tablet的大小
         if (stores[0]->reach_capacity_limit(tablet_size)) {
             res = OLAP_ERR_DISK_REACH_CAPACITY_LIMIT;
             break;
         }
 
-        // get shard
+        // 获取shard   get shard
         uint64_t shard = 0;
-        res = stores[0]->get_shard(&shard);
+        res = stores[0]->get_shard(&shard); //在磁盘上获取一个shard供迁移tablet时使用
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "fail to get root path shard. res=" << res;
             break;
         }
 
         stringstream root_path_stream;
-        root_path_stream << stores[0]->path() << DATA_PREFIX << "/" << shard;
+        root_path_stream << stores[0]->path() << DATA_PREFIX << "/" << shard; // static const std::string DATA_PREFIX = "/data";
         string schema_hash_path = SnapshotManager::instance()->get_schema_hash_full_path(tablet, root_path_stream.str());
         // if dir already exist then return err, it should not happen
         // should not remove the dir directly
@@ -143,6 +146,7 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
             break;
         }
 
+        //判断目标磁盘上要迁移的tablet是否已经存在
         TabletMetaSharedPtr new_tablet_meta(new(std::nothrow) TabletMeta());
         res = TabletMetaManager::get_meta(stores[0], tablet->tablet_id(), tablet->schema_hash(), new_tablet_meta);
         if (res != OLAP_ERR_META_KEY_NOT_FOUND) {
@@ -152,7 +156,8 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
             res = OLAP_ERR_META_ALREADY_EXIST;
             break;
         }
-        
+
+        //创建tablet的迁移路径
         Status st = FileUtils::create_dir(schema_hash_path);
         if (!st.ok()) {
             res = OLAP_ERR_CANNOT_CREATE_DIR;
@@ -161,7 +166,7 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
         }
 
         // migrate all index and data files but header file
-        res = _copy_index_and_data_files(schema_hash_path, tablet, consistent_rowsets);
+        res = _copy_index_and_data_files(schema_hash_path, tablet, consistent_rowsets);//将consistent_rowsets中的所有rowset的index和数据文件拷贝到schema_hash_path目录下
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "fail to copy index and data files when migrate. res=" << res;
             break;
@@ -244,15 +249,16 @@ void EngineStorageMigrationTask::_generate_new_header(
     // remove old meta after the new tablet is loaded successfully
 }
 
+/*将tablet中的所有rowset的index和数据文件拷贝到schema_hash_path目录下*/
 OLAPStatus EngineStorageMigrationTask::_copy_index_and_data_files(
         const string& schema_hash_path,
         const TabletSharedPtr& ref_tablet,
         const std::vector<RowsetSharedPtr>& consistent_rowsets) const {
     OLAPStatus status = OLAP_SUCCESS;
     for (const auto& rs : consistent_rowsets) {
-        status = rs->copy_files_to(schema_hash_path);
+        status = rs->copy_files_to(schema_hash_path); //将每一个rowset对应的文件拷贝到schema_hash_path目录下
         if (status != OLAP_SUCCESS) {
-            Status ret = FileUtils::remove_all(schema_hash_path);
+            Status ret = FileUtils::remove_all(schema_hash_path);//如果有一个rowset拷贝失败，则tablet迁移失败，移除schema_hash_path目录
             if (!ret.ok()) {
                 LOG(FATAL) << "remove storage migration path failed. "
                            << "schema_hash_path:" << schema_hash_path
