@@ -33,7 +33,7 @@ public:
     OLAPStatus capture_consistent_versions(const Version& spec_version,
                                            std::vector<Version>* version_path) const;
 private:
-    void _add_vertex_to_graph(int64_t vertex_value);
+    void _add_vertex_to_graph(int64_t vertex_value); //vertex是be/src/olap/olap_common.h中定义的结构体
 
     // OLAP version contains two parts, [start_version, end_version]. In order
     // to construct graph, the OLAP version has two corresponding vertex, one

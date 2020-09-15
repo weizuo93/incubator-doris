@@ -43,10 +43,10 @@ OLAPStatus Merger::merge_rowsets(TabletSharedPtr tablet,
     reader_params.version = dst_rowset_writer->version();
     RETURN_NOT_OK(reader.init(reader_params));
 
-    RowCursor row_cursor;
-    RETURN_NOT_OK_LOG(row_cursor.init(tablet->tablet_schema()),
+    RowCursor row_cursor;//创建RowCursor对象，用于代理一行数据的操作
+    RETURN_NOT_OK_LOG(row_cursor.init(tablet->tablet_schema()), //根据传入schema的初始化RowCursor对象
                  "failed to init row cursor when merging rowsets of tablet " + tablet->full_name());
-    row_cursor.allocate_memory_for_string_type(tablet->tablet_schema());
+    row_cursor.allocate_memory_for_string_type(tablet->tablet_schema());//为row_cursor代理的一行分配内存空间
 
     std::unique_ptr<MemTracker> tracker(new MemTracker(-1));
     std::unique_ptr<MemPool> mem_pool(new MemPool(tracker.get()));
@@ -57,17 +57,17 @@ OLAPStatus Merger::merge_rowsets(TabletSharedPtr tablet,
         ObjectPool objectPool;
         bool eof = false;
         // Read one row into row_cursor
-        RETURN_NOT_OK_LOG(reader.next_row_with_aggregation(&row_cursor, mem_pool.get(), &objectPool, &eof),
+        RETURN_NOT_OK_LOG(reader.next_row_with_aggregation(&row_cursor, mem_pool.get(), &objectPool, &eof),//读取一行，当没有下一行能被读到时，eof被设为true
                           "failed to read next row when merging rowsets of tablet " + tablet->full_name());
         if (eof) {
             break;
         }
-        RETURN_NOT_OK_LOG(dst_rowset_writer->add_row(row_cursor),
+        RETURN_NOT_OK_LOG(dst_rowset_writer->add_row(row_cursor),//通过RowsetWriter向merge后的rowset中添加一行
                           "failed to write row when merging rowsets of tablet " + tablet->full_name());
         output_rows++;
         // the memory allocate by mem pool has been copied,
         // so we should release memory immediately
-        mem_pool->clear();
+        mem_pool->clear();//释放内存池
     }
 
     if (stats_output != nullptr) {
@@ -76,7 +76,7 @@ OLAPStatus Merger::merge_rowsets(TabletSharedPtr tablet,
         stats_output->filtered_rows = reader.filtered_rows();
     }
 
-    RETURN_NOT_OK_LOG(dst_rowset_writer->flush(),
+    RETURN_NOT_OK_LOG(dst_rowset_writer->flush(),//将rowset刷写到segment文件中
                  "failed to flush rowset when merging rowsets of tablet " + tablet->full_name());
     return OLAP_SUCCESS;
 }

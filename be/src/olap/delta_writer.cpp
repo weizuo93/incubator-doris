@@ -81,9 +81,10 @@ void DeltaWriter::_garbage_collection() {
     }
 }
 
+/*初始化DeltaWriter*/
 OLAPStatus DeltaWriter::init() {
     TabletManager* tablet_mgr = _storage_engine->tablet_manager();
-    _tablet = tablet_mgr->get_tablet(_req.tablet_id, _req.schema_hash);
+    _tablet = tablet_mgr->get_tablet(_req.tablet_id, _req.schema_hash); //获取要写入数据的tablet
     if (_tablet == nullptr) {
         LOG(WARNING) << "fail to find tablet . tablet_id=" << _req.tablet_id
                      << ", schema_hash=" << _req.schema_hash;
@@ -98,7 +99,7 @@ OLAPStatus DeltaWriter::init() {
         MutexLock push_lock(_tablet->get_push_lock());
         RETURN_NOT_OK(_storage_engine->txn_manager()->prepare_txn(_req.partition_id, _tablet,
                                                                   _req.txn_id, _req.load_id));
-        if (_req.need_gen_rollup) {
+        if (_req.need_gen_rollup) { //判断是否需要生成Rollup
             AlterTabletTaskSharedPtr alter_task = _tablet->alter_task();
             if (alter_task != nullptr && alter_task->alter_state() != ALTER_FAILED) {
                 TTabletId new_tablet_id = alter_task->related_tablet_id();
@@ -109,7 +110,7 @@ OLAPStatus DeltaWriter::init() {
                           << ", new_tablet_id=" << new_tablet_id << ", "
                           << ", new_schema_hash=" << new_schema_hash << ", "
                           << ", transaction_id=" << _req.txn_id;
-                _new_tablet = tablet_mgr->get_tablet(new_tablet_id, new_schema_hash);
+                _new_tablet = tablet_mgr->get_tablet(new_tablet_id, new_schema_hash);//获取新的tablet
                 if (_new_tablet == nullptr) {
                     LOG(WARNING) << "find alter task, but could not find new tablet. "
                                  << "new_tablet_id=" << new_tablet_id
@@ -142,47 +143,50 @@ OLAPStatus DeltaWriter::init() {
     writer_context.txn_id = _req.txn_id;
     writer_context.load_id = _req.load_id;
     writer_context.segments_overlap = OVERLAPPING;
-    RETURN_NOT_OK(RowsetFactory::create_rowset_writer(writer_context, &_rowset_writer));
+    RETURN_NOT_OK(RowsetFactory::create_rowset_writer(writer_context, &_rowset_writer));//创建rowset_writer
 
     _tablet_schema = &(_tablet->tablet_schema());
     _schema.reset(new Schema(*_tablet_schema));
     _reset_mem_table();
 
     // create flush handler
-    RETURN_NOT_OK(_storage_engine->memtable_flush_executor()->create_flush_token(&_flush_token));
+    RETURN_NOT_OK(_storage_engine->memtable_flush_executor()->create_flush_token(&_flush_token));//创建flush token
 
     _is_init = true;
     return OLAP_SUCCESS;
 }
 
+/*DeltaWriter写Tuple*/
 OLAPStatus DeltaWriter::write(Tuple* tuple) {
     if (!_is_init) {
-        RETURN_NOT_OK(init());
+        RETURN_NOT_OK(init());//初始化DeltaWriter
     }
 
-    _mem_table->insert(tuple);
+    _mem_table->insert(tuple);//向memtable中插入tuple
 
     // if memtable is full, push it to the flush executor,
     // and create a new memtable for incoming data
-    if (_mem_table->memory_usage() >= config::write_buffer_size) {
-        RETURN_NOT_OK(_flush_memtable_async());
+    if (_mem_table->memory_usage() >= config::write_buffer_size) { //判断memtable是否已经写满
+        RETURN_NOT_OK(_flush_memtable_async());//将memtable提交到flush executor
         // create a new memtable for new incoming data
-        _reset_mem_table();
+        _reset_mem_table(); //创建新的memtable
     }
     return OLAP_SUCCESS;
 }
 
+/*通过flush token将memtable提交给flush executor*/
 OLAPStatus DeltaWriter::_flush_memtable_async() {
     return _flush_token->submit(_mem_table);
 }
 
+/*flush memtable*/
 OLAPStatus DeltaWriter::flush_memtable_and_wait() {
-    if (mem_consumption() == _mem_table->memory_usage()) {
+    if (mem_consumption() == _mem_table->memory_usage()) { //判断当前内存消耗量是否与memtable大小相同，即判断flush队列中是否有其他的memtable
         // equal means there is no memtable in flush queue, just flush this memtable
         VLOG(3) << "flush memtable to reduce mem consumption. memtable size: " << _mem_table->memory_usage()
                 << ", tablet: " << _req.tablet_id << ", load id: " << print_id(_req.load_id);
         RETURN_NOT_OK(_flush_memtable_async());
-        _reset_mem_table();
+        _reset_mem_table();//创建新的memtable
     } else {
         DCHECK(mem_consumption() > _mem_table->memory_usage());
         // this means there should be at least one memtable in flush queue.
@@ -192,12 +196,14 @@ OLAPStatus DeltaWriter::flush_memtable_and_wait() {
     return OLAP_SUCCESS;
 }
 
+/*创建新的memtable*/
 void DeltaWriter::_reset_mem_table() {
     _mem_table.reset(new MemTable(_tablet->tablet_id(), _schema.get(), _tablet_schema, _req.slots,
                                   _req.tuple_desc, _tablet->keys_type(), _rowset_writer.get(),
                                   _mem_tracker.get()));
 }
 
+/*关闭DeltaWriter*/
 OLAPStatus DeltaWriter::close() {
     if (!_is_init) {
         // if this delta writer is not initialized, but close() is called.
@@ -209,7 +215,7 @@ OLAPStatus DeltaWriter::close() {
     }
 
     RETURN_NOT_OK(_flush_memtable_async());
-    _mem_table.reset();
+    _mem_table.reset(); //复位memtable
     return OLAP_SUCCESS;
 }
 

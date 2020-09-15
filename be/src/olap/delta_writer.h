@@ -52,6 +52,13 @@ struct WriteRequest {
     const std::vector<SlotDescriptor*>* slots;
 };
 
+/*
+ * DeltaWriter主要负责不断接收新写入的批量数据，完成单个Tablet的数据写入。由于新增的数据可以是增量Delta部分，因此叫做DeltaWriter。
+ * DeltaWriter数据写入采用了类LSM树的结构，将数据先写到Memtable中，当Memtable数据写满后，会异步flush生成一个Segment进行持久化，
+ * 同时生成一个新的Memtable继续接收新增数据导入，这个flush操作由MemtableFlushExecutor执行器完成。Memtable中采用了跳表的结构对数
+ * 据进行排序，排序规则使用了按照schema的key的顺序依次对字段进行比较。这样保证了写入的每一个写入Segment中的数据是有序的。如果当前模型
+ * 为非DUP模型（AGG模型和UNIQUE模型）时，还会对相同key的数据进行聚合。
+ */
 // Writer for a particular (load, index, tablet).
 // This class is NOT thread-safe, external synchronization is required.
 class DeltaWriter {

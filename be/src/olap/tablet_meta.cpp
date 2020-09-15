@@ -289,7 +289,7 @@ OLAPStatus TabletMeta::_save_meta(DataDir* data_dir) {
     }
     string meta_binary;
     RETURN_NOT_OK(serialize(&meta_binary)); //将tablet meta的各项信息序列化为一个字符串，通过参数meta_binary传回
-    OLAPStatus status = TabletMetaManager::save(data_dir, tablet_id(), schema_hash(), meta_binary); //将tablet mate信息meta_binary以K-V形式存储在data dir(磁盘)上
+    OLAPStatus status = TabletMetaManager::save(data_dir, tablet_id(), schema_hash(), meta_binary); //将tablet mate信息meta_binary以K-V形式存储在RocksDB上
     if (status != OLAP_SUCCESS) {
        LOG(FATAL) << "fail to save tablet_meta. status=" << status
                   << ", tablet_id=" << tablet_id()

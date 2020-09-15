@@ -92,7 +92,7 @@ OLAPStatus TabletMetaManager::save(DataDir* store, TTabletId tablet_id, TSchemaH
     LOG(INFO) << "save tablet meta"
               << ", key:" << key
               << ", meta length:" << value.length();
-    return meta->put(META_COLUMN_FAMILY_INDEX, key, value);//将序列化后的tablet meta信息以K-V形式存储在data dir上
+    return meta->put(META_COLUMN_FAMILY_INDEX, key, value);//将序列化后的tablet meta信息以K-V形式put到Rocksdb上存储
 }
 
 /*将tablet mate信息以K-V形式存储在data dir上*/

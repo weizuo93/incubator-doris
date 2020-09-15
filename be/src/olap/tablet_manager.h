@@ -226,6 +226,12 @@ private:
     int64_t _last_update_stat_ms;//tablet状态cache的上一次更新时间
 
     inline tablet_map_t& _get_tablet_map(TTabletId tablet_id);
+
+    void  obtain_all_tablets(vector<TabletInfo> &tablets_info);
+    void get_tablets_distribution_on_different_disks(
+            std::map<int64_t, std::map<DataDir*, int>> &tablets_num_on_disk,
+            std::map<int64_t, std::map<DataDir*, int>> &tablets_size_on_disk,
+            std::map<int64_t, std::map<DataDir*, std::vector<TabletSize>>> &tablets_info_on_disk);
 };
 
 inline RWMutex& TabletManager::_get_tablet_map_lock(TTabletId tabletId) {

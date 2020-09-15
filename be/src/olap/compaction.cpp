@@ -49,6 +49,7 @@ OLAPStatus Compaction::do_compaction() {
     return st;
 }
 
+/*执行rowset的compaction操作*/
 OLAPStatus Compaction::do_compaction_impl() {
     OlapStopWatch watch;
 
@@ -63,19 +64,19 @@ OLAPStatus Compaction::do_compaction_impl() {
     TRACE_COUNTER_INCREMENT("input_row_num", _input_row_num);
     TRACE_COUNTER_INCREMENT("input_segments_num", segments_num);
 
-    _output_version = Version(_input_rowsets.front()->start_version(), _input_rowsets.back()->end_version());
-    _tablet->compute_version_hash_from_rowsets(_input_rowsets, &_output_version_hash);
+    _output_version = Version(_input_rowsets.front()->start_version(), _input_rowsets.back()->end_version());//front()返回当前vector容器中起始元素的引用,back()返回当前vector容器中末尾元素的引用。
+    _tablet->compute_version_hash_from_rowsets(_input_rowsets, &_output_version_hash);//计算版本hash
 
     LOG(INFO) << "start " << compaction_name() << ". tablet=" << _tablet->full_name()
             << ", output version is=" << _output_version.first << "-" << _output_version.second;
 
-    RETURN_NOT_OK(construct_output_rowset_writer());
-    RETURN_NOT_OK(construct_input_rowset_readers());
+    RETURN_NOT_OK(construct_output_rowset_writer()); //构建compaction生成的rowset的writer
+    RETURN_NOT_OK(construct_input_rowset_readers()); //构建compaction输入的rowset的reader
     TRACE("prepare finished");
 
     // 2. write merged rows to output rowset
     Merger::Statistics stats;
-    auto res = Merger::merge_rowsets(_tablet, compaction_type(), _input_rs_readers, _output_rs_writer.get(), &stats);
+    auto res = Merger::merge_rowsets(_tablet, compaction_type(), _input_rs_readers, _output_rs_writer.get(), &stats);//将tablet中的多个rowset合并成一个rowset
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "fail to do " << compaction_name()
                      << ". res=" << res
@@ -88,7 +89,7 @@ OLAPStatus Compaction::do_compaction_impl() {
     TRACE_COUNTER_INCREMENT("merged_rows", stats.merged_rows);
     TRACE_COUNTER_INCREMENT("filtered_rows", stats.filtered_rows);
 
-    _output_rowset = _output_rs_writer->build();
+    _output_rowset = _output_rs_writer->build();//通过RowsetWriter构建compaction生成的rowset
     if (_output_rowset == nullptr) {
         LOG(WARNING) << "rowset writer build failed. writer version:"
                      << ", output_version=" << _output_version.first
@@ -101,19 +102,19 @@ OLAPStatus Compaction::do_compaction_impl() {
     TRACE("output rowset built");
 
     // 3. check correctness
-    RETURN_NOT_OK(check_correctness(stats));
+    RETURN_NOT_OK(check_correctness(stats));//根据合并前后rowset中行数的对应关系检查rowset合并的正确性
     TRACE("check correctness finished");
 
     // 4. modify rowsets in memory
-    modify_rowsets();
+    modify_rowsets();//compaction后将多个rowset合并成了一个大的rowset，需要在tablet的meta信息中更新rowset meta信息
     TRACE("modify rowsets finished");
 
     // 5. update last success compaction time
     int64_t now = UnixMillis();
-    if (compaction_type() == ReaderType::READER_CUMULATIVE_COMPACTION) {
-        _tablet->set_last_cumu_compaction_success_time(now);
+    if (compaction_type() == ReaderType::READER_CUMULATIVE_COMPACTION) {//判断compaction的类型
+        _tablet->set_last_cumu_compaction_success_time(now);//更新cumulative compaction的时间
     } else {
-        _tablet->set_last_base_compaction_success_time(now);
+        _tablet->set_last_base_compaction_success_time(now);//更新base compaction的时间
     }
 
     LOG(INFO) << "succeed to do " << compaction_name()
@@ -126,6 +127,7 @@ OLAPStatus Compaction::do_compaction_impl() {
     return OLAP_SUCCESS;
 }
 
+/*为compaction输出的rowset创建writer，保存在成员变量_output_rs_writer中*/
 OLAPStatus Compaction::construct_output_rowset_writer() {
     RowsetWriterContext context;
     context.rowset_id = StorageEngine::instance()->next_rowset_id();
@@ -143,10 +145,11 @@ OLAPStatus Compaction::construct_output_rowset_writer() {
     context.version = _output_version;
     context.version_hash = _output_version_hash;
     context.segments_overlap = NONOVERLAPPING;
-    RETURN_NOT_OK(RowsetFactory::create_rowset_writer(context, &_output_rs_writer));
+    RETURN_NOT_OK(RowsetFactory::create_rowset_writer(context, &_output_rs_writer));//通过RowsetFactory创建rowset writer
     return OLAP_SUCCESS;
 }
 
+/*为tablet中需要compaction的每一个rowset创建reader，并添加到vector类型的成员变量_input_rs_readers中*/
 OLAPStatus Compaction::construct_input_rowset_readers() {
     for (auto& rowset : _input_rowsets) {
         RowsetReaderSharedPtr rs_reader;
@@ -156,21 +159,25 @@ OLAPStatus Compaction::construct_input_rowset_readers() {
     return OLAP_SUCCESS;
 }
 
+/*将compaction生成的rowset在tablet的meta信息中进行更新*/
 void Compaction::modify_rowsets() {
     std::vector<RowsetSharedPtr> output_rowsets;
     output_rowsets.push_back(_output_rowset);
     
     WriteLock wrlock(_tablet->get_header_lock_ptr());
-    _tablet->modify_rowsets(output_rowsets, _input_rowsets);
-    _tablet->save_meta();
+    _tablet->modify_rowsets(output_rowsets, _input_rowsets);//将compaction生成的rowset在tablet的meta信息中进行更新
+    _tablet->save_meta();//保存tablet的meta信息
 }
 
+/*回收不可用的rowset，将不可用的rowset添加到StorageEngine类的成员变量_unused_rowsets中进行管理*/
 OLAPStatus Compaction::gc_unused_rowsets() {
     StorageEngine* storage_engine = StorageEngine::instance();
+    //如果compaction没有成功，则将compaction生成的output rowset设为不可用
     if (_state != CompactionState::SUCCESS) {
         storage_engine->add_unused_rowset(_output_rowset);
         return OLAP_SUCCESS;
     }
+    //如果compaction成功了，则将compaction之前的那些已经被合并的rowset设为不可用
     for (auto& rowset : _input_rowsets) {
         storage_engine->add_unused_rowset(rowset);
     }
@@ -178,6 +185,7 @@ OLAPStatus Compaction::gc_unused_rowsets() {
     return OLAP_SUCCESS;
 }
 
+/*检查参数传入的多个rowset的版本连续性*/
 OLAPStatus Compaction::check_version_continuity(const vector<RowsetSharedPtr>& rowsets) {
     RowsetSharedPtr prev_rowset = rowsets.front();
     for (size_t i = 1; i < rowsets.size(); ++i) {
@@ -196,6 +204,7 @@ OLAPStatus Compaction::check_version_continuity(const vector<RowsetSharedPtr>& r
     return OLAP_SUCCESS;
 }
 
+/*检查rowset合并的正确性*/
 OLAPStatus Compaction::check_correctness(const Merger::Statistics& stats) {
     // 1. check row number
     if (_input_row_num != _output_rowset->num_rows() + stats.merged_rows + stats.filtered_rows) {
@@ -211,7 +220,7 @@ OLAPStatus Compaction::check_correctness(const Merger::Statistics& stats) {
         // If the check passes, ignore the error and set the correct value in the output rowset meta
         // to fix this problem.
         // Only handle alpha rowset because we only find this bug in alpha rowset
-        int64_t num_rows = _get_input_num_rows_from_seg_grps();
+        int64_t num_rows = _get_input_num_rows_from_seg_grps(); //从segment group中读取 alpha类型的rowset的行数
         if (num_rows == -1) {
             return OLAP_ERR_CHECK_LINES_ERROR;
         }
@@ -229,6 +238,7 @@ OLAPStatus Compaction::check_correctness(const Merger::Statistics& stats) {
     return OLAP_SUCCESS;
 }
 
+/*从segment group中读取 alpha类型的rowset的行数*/
 int64_t Compaction::_get_input_num_rows_from_seg_grps() {
     int64_t num_rows = 0;
     for (auto& rowset : _input_rowsets) {

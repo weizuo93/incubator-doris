@@ -172,7 +172,7 @@ OLAPStatus TabletManager::_add_tablet_to_map_unlocked(TTabletId tablet_id, Schem
     OLAPStatus res = OLAP_SUCCESS;
     if (update_meta) {
         // call tablet save meta in order to valid the meta
-        tablet->save_meta();
+        tablet->save_meta(); //将tablet meta信息存储在RocksDB上
     }
     if (drop_old) {
         // If the new tablet is fresher than the existing one, then replace the existing tablet with the new one.
@@ -1434,26 +1434,52 @@ void TabletManager::_remove_tablet_from_partition(const Tablet& tablet) {
 
 /*根据节点id获取对应节点上的所有tablet*/
 void TabletManager::obtain_all_tablets(vector<TabletInfo> &tablets_info) {
-    for (int32 i = 0; i < _tablet_map_lock_shard_size; i++) {//遍历所有的lock_shard
+    for (int32 i = 0; i < _tablet_map_lock_shard_size; i++) {
         ReadLock rdlock(&_tablet_map_lock_array[i]);
-        for (const auto& item : _tablet_map_array[i]) {//遍历每一个lock_shard对应的tablet map, _tablet_map_array[i]表示一个tablet map，每个item表示map中的一个元素
-            if (item.second.table_arr.size() == 0) {
-                continue;
-            }
-
-            for (TabletSharedPtr tablet : item.second.table_arr) {//遍历tablet id为item.first的所有tablet
-                // TODO(lingbin): if it is nullptr, why is it not deleted?
+        for (const auto& item : _tablet_map_array[i]) {
+            for (TabletSharedPtr tablet : item.second.table_arr) {
                 if (tablet == nullptr) {
                     continue;
                 }
-
-                TabletInfo* tablet_info = new TabletInfo(tablet->get_tablet_info().tablet_id, tablet->get_tablet_info().schema_hash, tablet->get_tablet_info().tablet_uid);//创建TabletInfo对象
-                tablets_info.emplace_back(*tablet_info);
+                TabletInfo tablet_info(tablet->get_tablet_info().tablet_id, tablet->get_tablet_info().schema_hash, tablet->get_tablet_info().tablet_uid);
+                tablets_info.emplace_back(tablet_info);
             }
-
         }
     }
-    LOG(INFO) << "success to get all tablets info in the BE node. tablet_count=" << tablets_info.size();
+}
+
+void TabletManager::get_tablets_distribution_on_different_disks(
+        std::map<int64_t, std::map<DataDir*, int>>& tablets_num_on_disk,
+        std::map<int64_t, std::map<DataDir*, int>>& tablets_size_on_disk,
+        std::map<int64_t, std::map<DataDir*, std::vector<TabletSize>>>& tablets_info_on_disk) {
+    std::vector<DataDir*> data_dirs = StorageEngine::instance()->get_stores();
+    std::map<int64_t, std::set<TabletInfo>>::iterator partition_iter =
+            _partition_tablet_map.begin();
+    for (; partition_iter != _partition_tablet_map.end(); partition_iter++) {
+        std::map<DataDir*, int> tablets_num;
+        std::map<DataDir*, int> tablets_size;
+        std::map<DataDir*, std::vector<TabletSize>> tablets_info;
+        for (int i = 0; i < data_dirs.size(); i++) {
+            tablets_num[data_dirs[i]] = 0;
+            tablets_size[data_dirs[i]] = 0;
+        }
+        int64_t partition_id = partition_iter->first;
+        std::set<TabletInfo>::iterator tablet_info_iter = (partition_iter->second).begin();
+        for (; tablet_info_iter != (partition_iter->second).end(); tablet_info_iter++) {
+            TabletSharedPtr tablet = _get_tablet_unlocked(tablet_info_iter->tablet_id,
+                                                          tablet_info_iter->schema_hash);
+            DataDir* data_dir = tablet->data_dir();
+            size_t tablet_footprint = tablet->tablet_footprint();
+            tablets_num[data_dir]++;
+            tablets_size[data_dir] = tablets_size[data_dir] + tablet_footprint;
+            TabletSize tablet_size(tablet_info_iter->tablet_id, tablet_info_iter->schema_hash,
+                                   tablet_footprint);
+            tablets_info[data_dir].push_back(tablet_size);
+        }
+        tablets_num_on_disk[partition_id] = tablets_num;
+        tablets_size_on_disk[partition_id] = tablets_size;
+        tablets_info_on_disk[partition_id] = tablets_info;
+    }
 }
 
 } // end namespace doris

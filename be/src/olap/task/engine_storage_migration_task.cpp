@@ -147,7 +147,7 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
         }
 
         //判断目标磁盘上要迁移的tablet是否已经存在
-        TabletMetaSharedPtr new_tablet_meta(new(std::nothrow) TabletMeta());
+        TabletMetaSharedPtr new_tablet_meta(new(std::nothrow) TabletMeta()); //"new(std::nothrow)"在分配内存失败时会返回一个空指针，而不是触发std::bad_alloc,可以方便的进行Test-for-NULL检查。
         res = TabletMetaManager::get_meta(stores[0], tablet->tablet_id(), tablet->schema_hash(), new_tablet_meta);
         if (res != OLAP_ERR_META_KEY_NOT_FOUND) {
             LOG(WARNING) << "tablet_meta already exists. "
@@ -172,10 +172,10 @@ OLAPStatus EngineStorageMigrationTask::_storage_medium_migrate(
             break;
         }
         tablet->obtain_header_rdlock();
-        _generate_new_header(stores[0], shard, tablet, consistent_rowsets, new_tablet_meta);
+        _generate_new_header(stores[0], shard, tablet, consistent_rowsets, new_tablet_meta); //在目标磁盘的给定shard上生成新的tablet meta
         tablet->release_header_lock();
         std::string new_meta_file = schema_hash_path + "/" + std::to_string(tablet_id) + ".hdr";
-        res = new_tablet_meta->save(new_meta_file);
+        res = new_tablet_meta->save(new_meta_file); //将当前tablet meta对象保存到传入的路径（protobuf文件中）
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "failed to save meta to path" << new_meta_file;
             break;
@@ -236,14 +236,14 @@ void EngineStorageMigrationTask::_generate_new_header(
         const std::vector<RowsetSharedPtr>& consistent_rowsets,
         TabletMetaSharedPtr new_tablet_meta) {
     DCHECK(store != nullptr);
-    tablet->generate_tablet_meta_copy(new_tablet_meta);
+    tablet->generate_tablet_meta_copy(new_tablet_meta); //生成tablet meta的拷贝，通过参数new_tablet_meta传回
 
     vector<RowsetMetaSharedPtr> rs_metas;
     for (auto& rs : consistent_rowsets) {
         rs_metas.push_back(rs->rowset_meta());
     }
-    new_tablet_meta->revise_rs_metas(std::move(rs_metas));
-    new_tablet_meta->set_shard_id(new_shard);
+    new_tablet_meta->revise_rs_metas(std::move(rs_metas)); //修改tablet meta中的成员变量_rs_metas
+    new_tablet_meta->set_shard_id(new_shard);              //设置tablet meta中的成员变量_shard_id
     // should not save new meta here, because new tablet may failed
     // should not remove the old meta here, because the new header maybe not valid
     // remove old meta after the new tablet is loaded successfully

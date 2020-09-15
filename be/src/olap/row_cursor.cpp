@@ -46,7 +46,7 @@ OLAPStatus RowCursor::_init(const std::vector<TabletColumn>& schema,
             LOG(WARNING) << "Fail to create field.";
             return OLAP_ERR_INIT_FAILED;
         }
-        _variable_len += column_schema(cid)->get_variable_len();
+        _variable_len += column_schema(cid)->get_variable_len();//获取schema中每一列的变量长度并求和
     }
 
     _fixed_len = _schema->schema_size();
@@ -56,7 +56,7 @@ OLAPStatus RowCursor::_init(const std::vector<TabletColumn>& schema,
         return OLAP_ERR_MALLOC_ERROR;
     }
     _owned_fixed_buf = _fixed_buf;
-    memset(_fixed_buf, 0, _fixed_len);
+    memset(_fixed_buf, 0, _fixed_len);//void *memset(void *s,int ch, unsigned n):将s所指向的某一块内存中的每个字节的内容全部设置为ch指定的ASCII值, 块的大小由第三个参数n指定,这个函数通常为新申请的内存做初始化工作, 其返回值为指向S的指针
 
     return OLAP_SUCCESS;
 }
