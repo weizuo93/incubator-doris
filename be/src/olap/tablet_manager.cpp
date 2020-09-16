@@ -692,7 +692,7 @@ void TabletManager::get_tablet_stat(TTabletStatResult* result) {
     result->__set_tablets_stats(_tablet_stat_cache);
 }
 
-/*根据compaction的类型寻找最适合进行compaction的tablet*/
+/*根据compaction的类型寻找最适合进行compaction（score最高）的tablet*/
 TabletSharedPtr TabletManager::find_best_tablet_to_compaction(CompactionType compaction_type, DataDir* data_dir) {
     int64_t now_ms = UnixMillis();
     const string& compaction_type_str = compaction_type == CompactionType::BASE_COMPACTION ? "base" : "cumulative";
@@ -701,29 +701,24 @@ TabletSharedPtr TabletManager::find_best_tablet_to_compaction(CompactionType com
     for (int32 i = 0; i < _tablet_map_lock_shard_size; i++) {
         ReadLock tablet_map_rdlock(&_tablet_map_lock_array[i]);
         tablet_map_t& tablet_map = _tablet_map_array[i];
-        for (tablet_map_t::value_type& table_ins : tablet_map){
+        for (tablet_map_t::value_type& table_ins : tablet_map){//unordered_map容器元素的迭代器可以访问Key与Value;unordered_map还定义了一个对应的类value_type，它的元素first对应于Key，元素second对应于Value
             for (TabletSharedPtr& tablet_ptr : table_ins.second.table_arr) {
+                //遍历BE上的每一个tablet
                 AlterTabletTaskSharedPtr cur_alter_task = tablet_ptr->alter_task();
-                if (cur_alter_task != nullptr
-                    && cur_alter_task->alter_state() != ALTER_FINISHED
-                    && cur_alter_task->alter_state() != ALTER_FAILED) {
-                    TabletSharedPtr related_tablet = _get_tablet_unlocked(
-                            cur_alter_task->related_tablet_id(), cur_alter_task->related_schema_hash());
-                    if (related_tablet != nullptr
-                        && tablet_ptr->creation_time() > related_tablet->creation_time()) {
+                if (cur_alter_task != nullptr && cur_alter_task->alter_state() != ALTER_FINISHED && cur_alter_task->alter_state() != ALTER_FAILED) {
+                    TabletSharedPtr related_tablet = _get_tablet_unlocked(cur_alter_task->related_tablet_id(), cur_alter_task->related_schema_hash());
+                    if (related_tablet != nullptr && tablet_ptr->creation_time() > related_tablet->creation_time()) {
                         // Current tablet is newly created during schema-change or rollup, skip it
+                        //当前的tablet是在schema-change或rollup过程中新创建的
                         continue;
                     }
                 }
                 // A not-ready tablet maybe a newly created tablet under schema-change, skip it
-                if (tablet_ptr->tablet_state() == TABLET_NOTREADY) {
+                if (tablet_ptr->tablet_state() == TABLET_NOTREADY) {//tablet的状态为not ready
                     continue;
                 }
 
-                if (tablet_ptr->data_dir()->path_hash() != data_dir->path_hash()
-                    || !tablet_ptr->is_used()
-                    || !tablet_ptr->init_succeeded()
-                    || !tablet_ptr->can_do_compaction()) {
+                if (tablet_ptr->data_dir()->path_hash() != data_dir->path_hash() || !tablet_ptr->is_used() || !tablet_ptr->init_succeeded() || !tablet_ptr->can_do_compaction()) {
                     continue;
                 }
 
@@ -731,7 +726,7 @@ TabletSharedPtr TabletManager::find_best_tablet_to_compaction(CompactionType com
                 if (compaction_type == CompactionType::BASE_COMPACTION) {
                     last_failure_ms = tablet_ptr->last_base_compaction_failure_time();
                 }
-                if (now_ms - last_failure_ms <= config::min_compaction_failure_interval_sec * 1000) {
+                if (now_ms - last_failure_ms <= config::min_compaction_failure_interval_sec * 1000) {//当前时间距离该tablet上次compaction失败的时间间隔小于某一个特定阈值
                     VLOG(1) << "Too often to check compaction, skip it."
                             << "compaction_type=" << compaction_type_str
                             << ", last_failure_time_ms=" << last_failure_ms
@@ -739,6 +734,7 @@ TabletSharedPtr TabletManager::find_best_tablet_to_compaction(CompactionType com
                     continue;
                 }
 
+                //获取compaction锁
                 if (compaction_type == CompactionType::BASE_COMPACTION) {
                     MutexLock lock(tablet_ptr->get_base_lock(), TRY_LOCK);
                     if (!lock.own_lock()) {
@@ -751,8 +747,8 @@ TabletSharedPtr TabletManager::find_best_tablet_to_compaction(CompactionType com
                     }
                 }
 
-
-                uint32_t table_score = 0;
+                //获取tablet的compaction score
+                uint32_t table_score = 0; // ？？？为什么不是 tablet_score ？？？
                 {
                     ReadLock rdlock(tablet_ptr->get_header_lock_ptr());
                     if (compaction_type == CompactionType::BASE_COMPACTION) {

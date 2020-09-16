@@ -75,10 +75,10 @@ public:
 
     // Waits for the count on the latch to reach zero, or until 'until' time is reached.
     // Returns true if the count became zero, false otherwise.
-    bool wait_until(const MonoTime& when) const {
+    bool wait_until(const MonoTime& when) const {//正常情况下，该函数不会返回true，除非count_的值小于等于0（count_的值只会被count_down()和reset()函数改变）。
         MutexLock lock(&lock_);
         while (count_ > 0) {
-            if (!cond_.wait_until(when)) {
+            if (!cond_.wait_until(when)) { //如果当前时间到达参数传入的时间点when，则函数返回false；否则，会一直while循环
                 return false;
             }
         }

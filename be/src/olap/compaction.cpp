@@ -42,10 +42,10 @@ OLAPStatus Compaction::init(int concurreny) {
 }
 
 OLAPStatus Compaction::do_compaction() {
-    _concurrency_sem.wait();
+    _concurrency_sem.wait();//获取并发锁
     TRACE("got concurrency lock and start to do compaction");
-    OLAPStatus st = do_compaction_impl();
-    _concurrency_sem.signal();
+    OLAPStatus st = do_compaction_impl();//执行rowset的compaction
+    _concurrency_sem.signal();//释放并发锁
     return st;
 }
 

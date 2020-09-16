@@ -29,6 +29,7 @@ CumulativeCompaction::CumulativeCompaction(TabletSharedPtr tablet)
 
 CumulativeCompaction::~CumulativeCompaction() { }
 
+/*执行cumulative compaction*/
 OLAPStatus CumulativeCompaction::compact() {
     if (!_tablet->init_succeeded()) {
         return OLAP_ERR_CUMULATIVE_INVALID_PARAMETERS;
@@ -42,23 +43,24 @@ OLAPStatus CumulativeCompaction::compact() {
     TRACE("got cumulative compaction lock");
 
     // 1.calculate cumulative point 
-    _tablet->calculate_cumulative_point();
+    _tablet->calculate_cumulative_point();//计算tablet中的cumulative point
     TRACE("calculated cumulative point");
 
     // 2. pick rowsets to compact
-    RETURN_NOT_OK(pick_rowsets_to_compact());
+    RETURN_NOT_OK(pick_rowsets_to_compact());//选取需要合并的rowset，保存在向量_input_rowsets中
     TRACE("rowsets picked");
     TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
 
     // 3. do cumulative compaction, merge rowsets
-    RETURN_NOT_OK(do_compaction());
+    RETURN_NOT_OK(do_compaction());//调用父类Compaction中定义的函数do_compaction()来执行cumulative compaction(其中会通过信号量控制并发执行的线程数)
     TRACE("compaction finished");
 
     // 4. set state to success
-    _state = CompactionState::SUCCESS;
+    _state = CompactionState::SUCCESS;//设置compaction状态
 
     // 5. set cumulative point
-    _tablet->set_cumulative_layer_point(_input_rowsets.back()->end_version() + 1);
+    //cumulative compaction之后更新当前tablet的cumulative point值为最后一个候选rowset的end_version+1
+    _tablet->set_cumulative_layer_point(_input_rowsets.back()->end_version() + 1);//更新当前tablet的cumulative point值
     
     // 6. add metric to cumulative compaction
     DorisMetrics::instance()->cumulative_compaction_deltas_total.increment(_input_rowsets.size());
@@ -66,23 +68,24 @@ OLAPStatus CumulativeCompaction::compact() {
     TRACE("save cumulative compaction metrics");
 
     // 7. garbage collect input rowsets after cumulative compaction 
-    RETURN_NOT_OK(gc_unused_rowsets());
+    RETURN_NOT_OK(gc_unused_rowsets());//cumulative compaction结束之后，回收不可用的rowset（compaction时的那些候选rowset）
     TRACE("unused rowsets have been moved to GC queue");
 
     return OLAP_SUCCESS;
 }
 
+/*选取需要合并的候选rowset*/
 OLAPStatus CumulativeCompaction::pick_rowsets_to_compact() {
     std::vector<RowsetSharedPtr> candidate_rowsets;
-    _tablet->pick_candicate_rowsets_to_cumulative_compaction(
-        config::cumulative_compaction_skip_window_seconds, &candidate_rowsets);
+    //选择tablet中_cumulative_point之后，同时创建时间距离当前时间大于某一个时间间隔（skip_window_sec）的所有rowset作为cumulative compaction的候选rowset
+    _tablet->pick_candicate_rowsets_to_cumulative_compaction(config::cumulative_compaction_skip_window_seconds, &candidate_rowsets);
 
     if (candidate_rowsets.empty()) {
         return OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSIONS;
     }
 
-    std::sort(candidate_rowsets.begin(), candidate_rowsets.end(), Rowset::comparator);
-    RETURN_NOT_OK(check_version_continuity(candidate_rowsets));
+    std::sort(candidate_rowsets.begin(), candidate_rowsets.end(), Rowset::comparator);//对所有的候选rowset进行排序
+    RETURN_NOT_OK(check_version_continuity(candidate_rowsets));//检查候选rowset的版本连续性
 
     std::vector<RowsetSharedPtr> transient_rowsets;
     size_t compaction_score = 0;

@@ -667,6 +667,7 @@ void Tablet::_max_continuous_version_from_begining_unlocked(Version* version, Ve
     *v_hash = max_continuous_version_hash;
 }
 
+/*计算tablet中的cumulative point*/
 void Tablet::calculate_cumulative_point() {
     WriteLock wrlock(&_meta_lock);
     if (_cumulative_point != kInvalidCumulativePoint) {
@@ -877,7 +878,7 @@ TabletInfo Tablet::get_tablet_info() const {
     return TabletInfo(tablet_id(), schema_hash(), tablet_uid());
 }
 
-/*挑选进行cumulative compaction的候选rowset*/
+/*选择tablet中_cumulative_point之后，同时创建时间距离当前时间大于某一个时间间隔（skip_window_sec）的所有rowset作为cumulative compaction的候选rowset*/
 void Tablet::pick_candicate_rowsets_to_cumulative_compaction(int64_t skip_window_sec,std::vector<RowsetSharedPtr>* candidate_rowsets) {
     int64_t now = UnixSeconds();
     ReadLock rdlock(&_meta_lock);
@@ -888,7 +889,7 @@ void Tablet::pick_candicate_rowsets_to_cumulative_compaction(int64_t skip_window
     }
 }
 
-/*挑选进行base compaction的候选rowset*/
+/*选择tablet中_cumulative_point之前的所有rowset作为base compaction的候选rowset*/
 void Tablet::pick_candicate_rowsets_to_base_compaction(vector<RowsetSharedPtr>* candidate_rowsets) {
     ReadLock rdlock(&_meta_lock);
     for (auto& it : _rs_version_map) {

@@ -48,7 +48,7 @@ bool ConditionVariable::wait_until(const MonoTime& until) const {
 
     struct timespec absolute_time;
     until.ToTimeSpec(&absolute_time);
-    int rv = pthread_cond_timedwait(&_condition, _user_mutex, &absolute_time);
+    int rv = pthread_cond_timedwait(&_condition, _user_mutex, &absolute_time);//在指定的时间absolute_time之前阻塞线程，成功完成之后会返回0
     DCHECK(rv == 0 || rv == ETIMEDOUT)
         << "unexpected pthread_cond_timedwait return value: " << rv;
 

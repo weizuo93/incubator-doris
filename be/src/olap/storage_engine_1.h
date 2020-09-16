@@ -36,6 +36,7 @@
 #include "gen_cpp/AgentService_types.h"
 #include "gen_cpp/BackendService_types.h"
 #include "gen_cpp/MasterService_types.h"
+#include "gutil/ref_counted.h"
 #include "olap/olap_common.h"
 #include "olap/olap_define.h"
 #include "olap/tablet.h"
@@ -48,6 +49,8 @@
 #include "olap/rowset/rowset_id_generator.h"
 #include "olap/fs/fs_util.h"
 #include "runtime/heartbeat_flags.h"
+#include "util/countdown_latch.h"
+#include "util/thread.h"
 
 namespace doris {
 
@@ -56,6 +59,7 @@ class EngineTask;
 class BlockManager;
 class MemTableFlushExecutor;
 class Tablet;
+class TaskWorkerPool;
 
 // StorageEngine singleton to manage all Table pointers.
 // Providing add/drop/get operations.
@@ -63,22 +67,9 @@ class Tablet;
 // allocation/deallocation must be done outside.
 class StorageEngine {
 public:
-    /*StorageEngine的构造函数
-
-        其中参数类型EngineOptions是一个结构体，存储的是tablet将要存放的路径以及BE的UUID
-        （UUID是系统为BE节点自动生成的唯一标识，BE节点每次重启时，UUID会被重置）
-
-        struct EngineOptions {
-            // list paths that tablet will be put into.
-            std::vector<StorePath> store_paths;
-            // BE's UUID. It will be reset every time BE restarts.
-            UniqueId backend_uid{0, 0};
-        };
-    */
     StorageEngine(const EngineOptions& options);
     ~StorageEngine();
 
-    /*打开存储引擎*/
     static Status open(const EngineOptions& options, StorageEngine** engine_ptr);
 
     static StorageEngine* instance() {
@@ -132,8 +123,6 @@ public:
     void start_delete_unused_rowset();
     void add_unused_rowset(RowsetSharedPtr rowset);
 
-    OLAPStatus recover_tablet_until_specfic_version(const TRecoverTabletReq& recover_tablet_req);
-
     // Obtain shard path for new tablet.
     //
     // @param [out] shard_path choose an available root_path to clone new tablet
@@ -150,30 +139,9 @@ public:
     // @return OLAP_SUCCESS if load tablet success
     OLAPStatus load_header(const std::string& shard_path, const TCloneReq& request, bool restore = false);
 
-    // To trigger a disk-stat and tablet report
-    void trigger_report() {
-        std::lock_guard<std::mutex> l(_report_mtx);
-        _need_report_tablet = true;
-        _need_report_disk_stat = true;
-        _report_cv.notify_all();//通知所有线程
-    }
-
-    // call this to wait for a report notification until timeout
-    void wait_for_report_notify(int64_t timeout_sec, bool from_report_tablet_thread) {
-        auto wait_timeout_sec = std::chrono::seconds(timeout_sec);
-        std::unique_lock<std::mutex> l(_report_mtx);
-        // When wait_for() returns, regardless of the return-result(possibly a timeout
-        // error), the report_tablet_thread and report_disk_stat_thread(see TaskWorkerPool)
-        // immediately begin the next round of reporting, so there is no need to check
-        // the return-value of wait_for().
-        if (from_report_tablet_thread) {
-            _report_cv.wait_for(l, wait_timeout_sec, [this] { return _need_report_tablet; });
-            _need_report_tablet = false;
-        } else {
-            _report_cv.wait_for(l, wait_timeout_sec, [this] { return _need_report_disk_stat; });
-            _need_report_disk_stat = false;
-        }
-    }
+    void register_report_listener(TaskWorkerPool* listener);
+    void deregister_report_listener(TaskWorkerPool* listener);
+    void notify_listeners();
 
     OLAPStatus execute_task(EngineTask* task);
 
@@ -209,7 +177,9 @@ public:
     }
 
     // start all backgroud threads. This should be call after env is ready.
-    Status start_bg_threads();//在olap_server.cpp中定义了该函数
+    Status start_bg_threads();
+
+    void stop();
 
 private:
     // Instance should be inited from `static open()`
@@ -239,28 +209,30 @@ private:
 
     // All these xxx_callback() functions are for Background threads
     // unused rowset monitor thread
-    void* _unused_rowset_monitor_thread_callback(void* arg);
+    void _unused_rowset_monitor_thread_callback();
 
     // base compaction thread process function
-    void* _base_compaction_thread_callback(void* arg, DataDir* data_dir);
+    void _base_compaction_thread_callback(DataDir* data_dir);
+    // check cumulative compaction config
+    void _check_cumulative_compaction_config();
     // cumulative process function
-    void* _cumulative_compaction_thread_callback(void* arg, DataDir* data_dir);
+    void _cumulative_compaction_thread_callback(DataDir* data_dir);
 
     // garbage sweep thread process function. clear snapshot and trash folder
-    void* _garbage_sweeper_thread_callback(void* arg);
+    void _garbage_sweeper_thread_callback();
 
     // delete tablet with io error process function
-    void* _disk_stat_monitor_thread_callback(void* arg);
+    void _disk_stat_monitor_thread_callback();
 
     // clean file descriptors cache
-    void* _fd_cache_clean_callback(void* arg);
+    void _fd_cache_clean_callback();
 
     // path gc process function
-    void* _path_gc_thread_callback(void* arg);
+    void _path_gc_thread_callback(DataDir* data_dir);
 
-    void* _path_scan_thread_callback(void* arg);
+    void _path_scan_thread_callback(DataDir* data_dir);
 
-    void* _tablet_checkpoint_callback(void* arg);
+    void _tablet_checkpoint_callback(DataDir* data_dir);
 
     // parse the default rowset type config to RowsetTypePB
     void _parse_default_rowset_type();
@@ -305,7 +277,7 @@ private:
 
     EngineOptions _options;
     std::mutex _store_lock;
-    std::map<std::string, DataDir*> _store_map;//****************保存字符串类型的data_dir->path()与DataDir类型的data_dir之间的对应关系*************************
+    std::map<std::string, DataDir*> _store_map;
     uint32_t _available_storage_medium_type_count;
 
     int32_t _effective_cluster_id;
@@ -327,31 +299,31 @@ private:
 
     Mutex _gc_mutex;
     // map<rowset_id(str), RowsetSharedPtr>, if we use RowsetId as the key, we need custom hash func
-    std::unordered_map<std::string, RowsetSharedPtr> _unused_rowsets;//保存不可用的rowset
+    std::unordered_map<std::string, RowsetSharedPtr> _unused_rowsets;
 
-    bool _stop_bg_worker = false;
-    std::thread _unused_rowset_monitor_thread;
+    std::shared_ptr<MemTracker> _compaction_mem_tracker;
+
+    CountDownLatch _stop_background_threads_latch;
+    scoped_refptr<Thread> _unused_rowset_monitor_thread;
     // thread to monitor snapshot expiry
-    std::thread _garbage_sweeper_thread;
+    scoped_refptr<Thread> _garbage_sweeper_thread;
     // thread to monitor disk stat
-    std::thread _disk_stat_monitor_thread;
+    scoped_refptr<Thread> _disk_stat_monitor_thread;
     // threads to run base compaction
-    std::vector<std::thread> _base_compaction_threads;
+    std::vector<scoped_refptr<Thread>> _base_compaction_threads;
     // threads to check cumulative
-    std::vector<std::thread> _cumulative_compaction_threads;
+    std::vector<scoped_refptr<Thread>> _cumulative_compaction_threads;
+    scoped_refptr<Thread> _fd_cache_clean_thread;
     // threads to clean all file descriptor not actively in use
-    std::thread _fd_cache_clean_thread;
-    std::vector<std::thread> _path_gc_threads;
+    std::vector<scoped_refptr<Thread>> _path_gc_threads;
     // threads to scan disk paths
-    std::vector<std::thread> _path_scan_threads;
+    std::vector<scoped_refptr<Thread>> _path_scan_threads;
     // threads to run tablet checkpoint
-    std::vector<std::thread> _tablet_checkpoint_threads;
+    std::vector<scoped_refptr<Thread>> _tablet_checkpoint_threads;
 
     // For tablet and disk-stat report
     std::mutex _report_mtx;
-    std::condition_variable _report_cv;
-    bool _need_report_tablet = false;
-    bool _need_report_disk_stat = false;
+    std::set<TaskWorkerPool*> _report_listeners;
 
     Mutex _engine_task_mutex;
 
@@ -360,7 +332,6 @@ private:
 
     std::unique_ptr<RowsetIdGenerator> _rowset_id_generator;
 
-    //MemTableFlushExecutor负责将memtable刷写到磁盘上，其中包含了一个线程池来处理所有任务
     std::unique_ptr<MemTableFlushExecutor> _memtable_flush_executor;
 
     std::unique_ptr<fs::BlockManager> _block_manager;
