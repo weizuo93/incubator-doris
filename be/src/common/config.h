@@ -317,6 +317,7 @@ namespace config {
     // set it to larger than C will be set to equal to C.
     // This config can be set to 0, which means to forbid any compaction, for some special cases.
     CONF_Int32(max_compaction_concurrency, "-1");
+    CONF_Int32(max_compaction_memory_allowed, "-1");
 
     // Threshold to logging compaction trace, in seconds.
     CONF_mInt32(base_compaction_trace_threshold, "10");

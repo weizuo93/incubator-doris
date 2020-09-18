@@ -26,6 +26,7 @@ using std::vector;
 namespace doris {
 
 Semaphore Compaction::_concurrency_sem;
+Semaphore Compaction::_memory_sem;
 
 Compaction::Compaction(TabletSharedPtr tablet, const std::string& label, const std::shared_ptr<MemTracker>& parent_tracker)
         : _mem_tracker(MemTracker::CreateTracker(-1, label, parent_tracker)),
@@ -37,15 +38,24 @@ Compaction::Compaction(TabletSharedPtr tablet, const std::string& label, const s
 
 Compaction::~Compaction() {}
 
-OLAPStatus Compaction::init(int concurreny) {
+OLAPStatus Compaction::init(int concurreny, int memory) {
     _concurrency_sem.set_count(concurreny);
+    _memory_sem.set_count(memory);
+    return OLAP_SUCCESS;
+}
+
+OLAPStatus Compaction::set_memory_sem(int memory) {
+    _memory_sem.set_count(memory);
     return OLAP_SUCCESS;
 }
 
 OLAPStatus Compaction::do_compaction() {
     _concurrency_sem.wait();
+    /* "n" ---estimate memory usage for compaction */
+    _memory_sem.wait(n);
     TRACE("got concurrency lock and start to do compaction");
     OLAPStatus st = do_compaction_impl();
+    _memory_sem.signal(n);
     _concurrency_sem.signal();
     return st;
 }

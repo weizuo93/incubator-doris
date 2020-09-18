@@ -49,7 +49,9 @@ public:
 
     virtual OLAPStatus compact() = 0;
 
-    static OLAPStatus init(int concurreny);
+    static OLAPStatus init(int concurreny, int memory);
+
+    static OLAPStatus set_memory_sem(int memory);
 
 protected:
     virtual OLAPStatus pick_rowsets_to_compact() = 0;
@@ -70,6 +72,7 @@ protected:
 
     // semaphore used to limit the concurrency of running compaction tasks
     static Semaphore _concurrency_sem;
+    static Semaphore _memory_sem;
 
 private:
     // get num rows from segment group meta of input rowsets.

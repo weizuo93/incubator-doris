@@ -86,7 +86,8 @@ Status StorageEngine::start_bg_threads() {
         // reserve 1 thread for manual execution
         max_compaction_concurrency = base_compaction_num_threads + cumulative_compaction_num_threads + 1;
     }
-    Compaction::init(max_compaction_concurrency);
+    int32_t max_allow_memory = config::max_compaction_memory_allowed;
+    Compaction::init(max_compaction_concurrency, max_compaction_memory_allowed);
 
     _base_compaction_threads.reserve(base_compaction_num_threads);
     for (uint32_t i = 0; i < base_compaction_num_threads; ++i) {

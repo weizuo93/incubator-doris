@@ -35,10 +35,22 @@ class Semaphore {
             _cv.notify_one();
         }
 
+        void signal(int n) {
+            std::unique_lock<std::mutex> lock(_mutex);
+            _count = _count + n;
+            _cv.notify_one();
+        }
+
         void wait() {
             std::unique_lock<std::mutex> lock(_mutex);
             _cv.wait(lock, [=] { return _count > 0; });
             --_count;
+        }
+
+        void wait(int n) {
+            std::unique_lock<std::mutex> lock(_mutex);
+            _cv.wait(lock, [=] { return (_count - n) > 0; });
+            _count = _count - n;
         }
 
     private:
