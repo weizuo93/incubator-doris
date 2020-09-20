@@ -49,13 +49,12 @@ OLAPStatus Compaction::set_memory_sem(int memory) {
     return OLAP_SUCCESS;
 }
 
-OLAPStatus Compaction::do_compaction() {
+OLAPStatus Compaction::do_compaction(int compaction_memory) {
     _concurrency_sem.wait();
-    /* "n" ---estimate memory usage for compaction */
-    _memory_sem.wait(n);
+    _memory_sem.wait(compaction_memory);
     TRACE("got concurrency lock and start to do compaction");
     OLAPStatus st = do_compaction_impl();
-    _memory_sem.signal(n);
+    _memory_sem.signal(compaction_memory);
     _concurrency_sem.signal();
     return st;
 }

@@ -58,7 +58,7 @@ protected:
     virtual std::string compaction_name() const = 0;
     virtual ReaderType compaction_type() const = 0;
 
-    OLAPStatus do_compaction();
+    OLAPStatus do_compaction(int compaction_score);
     OLAPStatus do_compaction_impl();
 
     void modify_rowsets();

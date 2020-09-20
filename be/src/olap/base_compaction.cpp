@@ -45,7 +45,8 @@ OLAPStatus BaseCompaction::compact() {
     TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
 
     // 2. do base compaction, merge rowsets
-    RETURN_NOT_OK(do_compaction());
+    int compaction_score = _tablet->calc_base_compaction_score();
+    RETURN_NOT_OK(do_compaction(compaction_score));
     TRACE("compaction finished");
 
     // 3. set state to success
