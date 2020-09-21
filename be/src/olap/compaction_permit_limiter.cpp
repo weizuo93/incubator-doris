@@ -15,36 +15,32 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
+#include "olap/compaction_permit_limiter.h"
 
-#include <mutex>
-#include <condition_variable>
+namespace doris {
 
-namespace {
+uint32_t CompactionPermitLimiter::_total_permits;
+uint32_t CompactionPermitLimiter::_used_permits;
+std::mutex CompactionPermitLimiter::_mutex;
 
-class Semaphore {
-    public:
-        explicit Semaphore(int count = 0) : _count(count) {
-        }
+OLAPStatus CompactionPermitLimiter::init(uint32_t total_permits) {
+    _total_permits = total_permits;
+    _used_permits = 0;
+    return OLAP_SUCCESS;
+}
 
-        void set_count(int count) { _count = count; }
+bool CompactionPermitLimiter::request(uint32_t permits) {
+    while ((_total_permits - _used_permits) < permits) {
+        sleep(5);
+    }
+    std::unique_lock<std::mutex> lock(_mutex);
+    _used_permits += permits;
+    return true;
+}
 
-        void signal() {
-            std::unique_lock<std::mutex> lock(_mutex);
-            ++_count;
-            _cv.notify_one();
-        }
-
-        void wait() {
-            std::unique_lock<std::mutex> lock(_mutex);
-            _cv.wait(lock, [=] { return _count > 0; });
-            --_count;
-        }
-
-    private:
-        std::mutex _mutex;
-        std::condition_variable _cv;
-        int _count;
-};
-
-} // end namespace
+OLAPStatus CompactionPermitLimiter::release(uint32_t permits) {
+    std::unique_lock<std::mutex> lock(_mutex);
+    _used_permits = _used_permits - permits;
+    return OLAP_SUCCESS;
+}
+}  // namespace doris

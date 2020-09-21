@@ -18,6 +18,7 @@
 #include "gutil/strings/substitute.h"
 #include "olap/compaction.h"
 #include "olap/rowset/rowset_factory.h"
+#include "olap/compaction_permit_limiter.h"
 #include "util/time.h"
 #include "util/trace.h"
 
@@ -26,7 +27,6 @@ using std::vector;
 namespace doris {
 
 Semaphore Compaction::_concurrency_sem;
-Semaphore Compaction::_memory_sem;
 
 Compaction::Compaction(TabletSharedPtr tablet, const std::string& label, const std::shared_ptr<MemTracker>& parent_tracker)
         : _mem_tracker(MemTracker::CreateTracker(-1, label, parent_tracker)),
@@ -38,23 +38,19 @@ Compaction::Compaction(TabletSharedPtr tablet, const std::string& label, const s
 
 Compaction::~Compaction() {}
 
-OLAPStatus Compaction::init(int concurreny, int memory) {
+OLAPStatus Compaction::init(int concurreny) {
     _concurrency_sem.set_count(concurreny);
-    _memory_sem.set_count(memory);
     return OLAP_SUCCESS;
 }
 
-OLAPStatus Compaction::set_memory_sem(int memory) {
-    _memory_sem.set_count(memory);
-    return OLAP_SUCCESS;
-}
-
-OLAPStatus Compaction::do_compaction(int compaction_memory) {
+OLAPStatus Compaction::do_compaction(uint32_t compaction_memory) {
     _concurrency_sem.wait();
-    _memory_sem.wait(compaction_memory);
-    TRACE("got concurrency lock and start to do compaction");
-    OLAPStatus st = do_compaction_impl();
-    _memory_sem.signal(compaction_memory);
+    OLAPStatus st = OLAP_SUCCESS;
+    if (CompactionPermitLimiter::request(compaction_memory)) {
+        TRACE("got concurrency lock and start to do compaction");
+        st = do_compaction_impl();
+        CompactionPermitLimiter::release(compaction_memory);
+    }
     _concurrency_sem.signal();
     return st;
 }

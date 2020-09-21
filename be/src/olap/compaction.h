@@ -27,6 +27,7 @@
 #include "olap/tablet.h"
 #include "olap/tablet_meta.h"
 #include "olap/utils.h"
+#include "olap/compaction_permit_limiter.h"
 #include "rowset/rowset_id_generator.h"
 #include "util/semaphore.hpp"
 
@@ -49,16 +50,14 @@ public:
 
     virtual OLAPStatus compact() = 0;
 
-    static OLAPStatus init(int concurreny, int memory);
-
-    static OLAPStatus set_memory_sem(int memory);
+    static OLAPStatus init(int concurreny);
 
 protected:
     virtual OLAPStatus pick_rowsets_to_compact() = 0;
     virtual std::string compaction_name() const = 0;
     virtual ReaderType compaction_type() const = 0;
 
-    OLAPStatus do_compaction(int compaction_score);
+    OLAPStatus do_compaction(uint32_t compaction_score);
     OLAPStatus do_compaction_impl();
 
     void modify_rowsets();
@@ -72,7 +71,6 @@ protected:
 
     // semaphore used to limit the concurrency of running compaction tasks
     static Semaphore _concurrency_sem;
-    static Semaphore _memory_sem;
 
 private:
     // get num rows from segment group meta of input rowsets.
