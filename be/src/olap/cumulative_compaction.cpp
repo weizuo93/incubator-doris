@@ -77,7 +77,7 @@ OLAPStatus CumulativeCompaction::compact() {
 /*选取需要合并的候选rowset*/
 OLAPStatus CumulativeCompaction::pick_rowsets_to_compact() {
     std::vector<RowsetSharedPtr> candidate_rowsets;
-    //选择tablet中_cumulative_point之后，同时创建时间距离当前时间大于某一个时间间隔（skip_window_sec）的所有rowset作为cumulative compaction的候选rowset
+    //选择tablet中_cumulative_point之后，同时满足创建时间距离当前时间大于某一个时间间隔（skip_window_sec）的所有rowset作为cumulative compaction的候选rowset
     _tablet->pick_candicate_rowsets_to_cumulative_compaction(config::cumulative_compaction_skip_window_seconds, &candidate_rowsets);
 
     if (candidate_rowsets.empty()) {
@@ -87,41 +87,45 @@ OLAPStatus CumulativeCompaction::pick_rowsets_to_compact() {
     std::sort(candidate_rowsets.begin(), candidate_rowsets.end(), Rowset::comparator);//对所有的候选rowset进行排序
     RETURN_NOT_OK(check_version_continuity(candidate_rowsets));//检查候选rowset的版本连续性
 
-    std::vector<RowsetSharedPtr> transient_rowsets;
+    std::vector<RowsetSharedPtr> transient_rowsets;//存储需要执行cumulative compactiom的候选rowset
     size_t compaction_score = 0;
     // the last delete version we meet when traversing candidate_rowsets
     Version last_delete_version { -1, -1 };
 
     for (size_t i = 0; i < candidate_rowsets.size(); ++i) {
         RowsetSharedPtr rowset = candidate_rowsets[i];
+        //判断当前rowset是否已经被删除
         if (_tablet->version_for_delete_predicate(rowset->version())) {
             last_delete_version = rowset->version();
+            // 当前rowset已经被删除，并且该删除版本之前存在rowset，需要执行cumulative compactiom，循环退出
             if (!transient_rowsets.empty()) {
                 // we meet a delete version, and there were other versions before.
                 // we should compact those version before handling them over to base compaction
-                _input_rowsets = transient_rowsets;
+                _input_rowsets = transient_rowsets; //transient_rowsets中的rowset就是需要执行cumulative compactiom的rowset
                 break;
             }
-
+            // transient_rowsets为空，表示在该删除版本之前不存在其他的rowset，直接跳过该删除版本的rowset
             // we meet a delete version, and no other versions before, skip it and continue
-            transient_rowsets.clear();
+            transient_rowsets.clear(); //清空transient_rowsets
             compaction_score = 0;
             continue;
         }
 
+        //当前compaction score到达config::max_cumulative_compaction_num_singleton_deltas（默认为1000），则需要执行cumulative compactiom
         if (compaction_score >= config::max_cumulative_compaction_num_singleton_deltas) {
             // got enough segments
             break;
         }
 
-        compaction_score += rowset->rowset_meta()->get_compaction_score();
-        transient_rowsets.push_back(rowset); 
+        //该版本的rowset没有被删除，并且当前的compaction score没有到达阈值（1000）
+        compaction_score += rowset->rowset_meta()->get_compaction_score();//修改compaction_score，增加当前rowset的compaction score
+        transient_rowsets.push_back(rowset); //将当前的候选rowset添加到transient_rowsets中
     }
 
     // if we have a sufficient number of segments,
     // or have other versions before encountering the delete version, we should process the compaction.
-    if (compaction_score >= config::min_cumulative_compaction_num_singleton_deltas
-        || (last_delete_version.first != -1 && !transient_rowsets.empty())) {
+    //如果当前的compaction score到达阈值，或当前rowset已经被删除并且当前rowset之前存在候选rowset，则需要对transient_rowsets中的rowset执行cumulative compaction
+    if (compaction_score >= config::min_cumulative_compaction_num_singleton_deltas || (last_delete_version.first != -1 && !transient_rowsets.empty())) {
         _input_rowsets = transient_rowsets;
     }
 
@@ -132,7 +136,7 @@ OLAPStatus CumulativeCompaction::pick_rowsets_to_compact() {
             // we meet a delete version, should increase the cumulative point to let base compaction handle the delete version.
             // plus 1 to skip the delete version.
             // NOTICE: after that, the cumulative point may be larger than max version of this tablet, but it doen't matter.
-            _tablet->set_cumulative_layer_point(last_delete_version.first + 1);
+            _tablet->set_cumulative_layer_point(last_delete_version.first + 1);//更新cumulative point
             return OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSIONS;
         }
 
@@ -162,7 +166,7 @@ OLAPStatus CumulativeCompaction::pick_rowsets_to_compact() {
                 }
 
                 // all candicate rowsets are non-overlapping, increase the cumulative point
-                _tablet->set_cumulative_layer_point(candidate_rowsets.back()->start_version() + 1);
+                _tablet->set_cumulative_layer_point(candidate_rowsets.back()->start_version() + 1);//更新cumulative point
             }
         } else {
             // init the compaction success time for first time
