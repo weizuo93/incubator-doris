@@ -56,15 +56,15 @@ OLAPStatus Compaction::do_compaction_impl() {
     // 1. prepare input and output parameters
     int64_t segments_num = 0;
     for (auto& rowset : _input_rowsets) {
-        _input_rowsets_size += rowset->data_disk_size();
-        _input_row_num += rowset->num_rows();
-        segments_num += rowset->num_segments();
+        _input_rowsets_size += rowset->data_disk_size(); //计算待合并的rowset的大小总和
+        _input_row_num += rowset->num_rows();            //计算待合并的rowset的总行数
+        segments_num += rowset->num_segments();          //计算待合并的rowset的中segment数量总和
     }
     TRACE_COUNTER_INCREMENT("input_rowsets_data_size", _input_rowsets_size);
     TRACE_COUNTER_INCREMENT("input_row_num", _input_row_num);
     TRACE_COUNTER_INCREMENT("input_segments_num", segments_num);
 
-    _output_version = Version(_input_rowsets.front()->start_version(), _input_rowsets.back()->end_version());//front()返回当前vector容器中起始元素的引用,back()返回当前vector容器中末尾元素的引用。
+    _output_version = Version(_input_rowsets.front()->start_version(), _input_rowsets.back()->end_version());// 计算compaction生成的rowset的版本数据。front()返回当前vector容器中起始元素的引用,back()返回当前vector容器中末尾元素的引用。
     _tablet->compute_version_hash_from_rowsets(_input_rowsets, &_output_version_hash);//计算版本hash
 
     LOG(INFO) << "start " << compaction_name() << ". tablet=" << _tablet->full_name()

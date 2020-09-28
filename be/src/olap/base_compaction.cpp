@@ -92,7 +92,7 @@ OLAPStatus BaseCompaction::pick_rowsets_to_compact() {
     }
 
     // 2. the ratio between base rowset and all input cumulative rowsets reachs the threshold
-    //当其他候选rowset与base rowset（start_version为0）的大小比率超过config::base_cumulative_delta_ratio（默认为0.3）时，函数直接返回OLAP_SUCCESS，执行base compaction
+    //在所有候选rowset中，当其他候选rowset与base rowset（start_version为0）的大小比率超过config::base_cumulative_delta_ratio（默认为0.3）时，函数直接返回OLAP_SUCCESS，执行base compaction
     int64_t base_size = 0;
     int64_t cumulative_total_size = 0;
     for (auto& rowset : _input_rowsets) {
@@ -124,7 +124,7 @@ OLAPStatus BaseCompaction::pick_rowsets_to_compact() {
     //如果当前时间距离上次执行base compaction的时间(即base compaction的创建时间)间隔超过config::base_compaction_interval_seconds_since_last_operation（默认为1天，即86400秒），函数直接返回OLAP_SUCCESS，执行base compaction
     int64_t base_creation_time = _input_rowsets[0]->creation_time();//获取base rowset的创建时间
     int64_t interval_threshold = config::base_compaction_interval_seconds_since_last_operation;
-    int64_t interval_since_last_base_compaction = time(NULL) - base_creation_time;//
+    int64_t interval_since_last_base_compaction = time(NULL) - base_creation_time;
     if (interval_since_last_base_compaction > interval_threshold) {
         LOG(INFO) << "satisfy the base compaction policy. tablet=" << _tablet->full_name()
                   << ", interval_since_last_base_compaction=" << interval_since_last_base_compaction 

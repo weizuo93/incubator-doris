@@ -60,6 +60,7 @@ int MemTable::RowCursorComparator::operator()(const char* left, const char* righ
     return compare_row(lhs_row, rhs_row);
 }
 
+/*向memtable中插入tuple*/
 void MemTable::insert(const Tuple* tuple) {
     bool overwritten = false;
     uint8_t* _tuple_buf = nullptr;

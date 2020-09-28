@@ -32,6 +32,7 @@ OLAPStatus DeltaWriter::open(WriteRequest* req, MemTracker* mem_tracker, DeltaWr
     return OLAP_SUCCESS;
 }
 
+// 构造函数
 DeltaWriter::DeltaWriter(WriteRequest* req, MemTracker* parent, StorageEngine* storage_engine) :
         _req(*req), _tablet(nullptr), _cur_rowset(nullptr), _new_rowset(nullptr),
         _new_tablet(nullptr), _rowset_writer(nullptr), _tablet_schema(nullptr),
@@ -39,6 +40,7 @@ DeltaWriter::DeltaWriter(WriteRequest* req, MemTracker* parent, StorageEngine* s
     _mem_tracker.reset(new MemTracker(-1, "delta writer", parent));
 }
 
+// 析构函数
 DeltaWriter::~DeltaWriter() {
     if (_is_init && !_delta_written_success) {
         _garbage_collection();
