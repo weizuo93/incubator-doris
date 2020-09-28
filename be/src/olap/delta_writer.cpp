@@ -158,7 +158,7 @@ OLAPStatus DeltaWriter::init() {
     return OLAP_SUCCESS;
 }
 
-/*DeltaWriter写Tuple*/
+/*DeltaWriter写一个Tuple(一行数据)到memtable*/
 OLAPStatus DeltaWriter::write(Tuple* tuple) {
     if (!_is_init) {
         RETURN_NOT_OK(init());//初始化DeltaWriter
