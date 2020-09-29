@@ -80,20 +80,22 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
     return Status::OK();
 }
 
+/*向SegmentWriter对象中添加一行数据*/
 template<typename RowType>
 Status SegmentWriter::append_row(const RowType& row) {
-    for (size_t cid = 0; cid < _column_writers.size(); ++cid) {
-        auto cell = row.cell(cid);
-        RETURN_IF_ERROR(_column_writers[cid]->append(cell));
+    for (size_t cid = 0; cid < _column_writers.size(); ++cid) { //遍历该行数据中的每一列
+        auto cell = row.cell(cid);                           //获取该行中的一列
+        RETURN_IF_ERROR(_column_writers[cid]->append(cell)); //将当前列添加到该列对应的column writer中
     }
 
     // At the begin of one block, so add a short key index entry
+    // 在数据写入过程中，每隔一定行数（默认为1024行），会生成一个前缀索引项（short key）
     if ((_row_count % _opts.num_rows_per_block) == 0) {
         std::string encoded_key;
-        encode_key(&encoded_key, row, _tablet_schema->num_short_key_columns());
-        RETURN_IF_ERROR(_index_builder->add_item(encoded_key));
+        encode_key(&encoded_key, row, _tablet_schema->num_short_key_columns()); //根据前缀列的数目，将该行数据进行编码（olap_file.proto中TabletSchemaPB定义了num_short_key_columns默认为3）
+        RETURN_IF_ERROR(_index_builder->add_item(encoded_key)); //添加前缀编码
     }
-    ++_row_count;
+    ++_row_count; //当前segment中的行数目增1
     return Status::OK();
 }
 

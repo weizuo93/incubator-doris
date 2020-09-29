@@ -90,20 +90,22 @@ void encode_key_with_padding(std::string* buf, const RowType& row,
 // Encode one row into binary according given num_keys.
 // Client call this function must assure that row contains the first
 // num_keys columns.
+/*根据给定的前缀列数目，将一行数据进行编码*/
 template<typename RowType, bool null_first = true>
 void encode_key(std::string* buf, const RowType& row, size_t num_keys) {
-    for (auto cid = 0; cid < num_keys; cid++) {
-        auto cell = row.cell(cid);
+    for (auto cid = 0; cid < num_keys; cid++) { //遍历该行中的每一个前缀列
+        auto cell = row.cell(cid); //获取一个前缀列
         if (cell.is_null()) {
             if (null_first) {
-                buf->push_back(KEY_NULL_FIRST_MARKER);
+                // std::string的push_back()函数作用是字符串之后插入一个字符
+                buf->push_back(KEY_NULL_FIRST_MARKER); //KEY_NULL_FIRST_MARKER = 0x01;
             } else {
-                buf->push_back(KEY_NULL_LAST_MARKER);
+                buf->push_back(KEY_NULL_LAST_MARKER); //KEY_NULL_LAST_MARKER = 0xFE
             }
             continue;
         }
-        buf->push_back(KEY_NORMAL_MARKER);
-        row.schema()->column(cid)->encode_ascending(cell.cell_ptr(), buf);
+        buf->push_back(KEY_NORMAL_MARKER); //KEY_NORMAL_MARKER = 0x02
+        row.schema()->column(cid)->encode_ascending(cell.cell_ptr(), buf);//将cell.cell_ptr()编码进buf
     }
 }
 

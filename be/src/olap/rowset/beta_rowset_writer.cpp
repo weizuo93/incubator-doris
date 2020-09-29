@@ -64,6 +64,7 @@ BetaRowsetWriter::~BetaRowsetWriter() {
     }
 }
 
+/*初始化BetaRowsetWriter对象*/
 OLAPStatus BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) {
     _context = rowset_writer_context;
     _rowset_meta.reset(new RowsetMeta);
@@ -90,19 +91,20 @@ OLAPStatus BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_conte
 template<typename RowType>
 OLAPStatus BetaRowsetWriter::_add_row(const RowType& row) {
     if (PREDICT_FALSE(_segment_writer == nullptr)) {
-        RETURN_NOT_OK(_create_segment_writer());
+        RETURN_NOT_OK(_create_segment_writer()); //创建一个SegmentWriter对象用来初始化成员变量_segment_writer
     }
     // TODO update rowset's zonemap
-    auto s = _segment_writer->append_row(row);
+    auto s = _segment_writer->append_row(row); //向_segment_writer中添加一行数据
     if (PREDICT_FALSE(!s.ok())) {
         LOG(WARNING) << "failed to append row: " << s.to_string();
         return OLAP_ERR_WRITER_DATA_WRITE_ERROR;
     }
+    // 当前segment的大小到达某个阈值或segment中的行数到达某个阈值，则执行segment flush
     if (PREDICT_FALSE(_segment_writer->estimate_segment_size() >= MAX_SEGMENT_SIZE
             || _segment_writer->num_rows_written() >= _context.max_rows_per_segment)) {
-        RETURN_NOT_OK(_flush_segment_writer());
+        RETURN_NOT_OK(_flush_segment_writer()); //刷写segment
     }
-    ++_num_rows_written;
+    ++_num_rows_written; //写入行数增1
     return OLAP_SUCCESS;
 }
 
@@ -129,9 +131,10 @@ OLAPStatus BetaRowsetWriter::add_rowset_for_linked_schema_change(RowsetSharedPtr
     return add_rowset(rowset);
 }
 
+/*刷写segment文件*/
 OLAPStatus BetaRowsetWriter::flush() {
     if (_segment_writer != nullptr) {
-        RETURN_NOT_OK(_flush_segment_writer());
+        RETURN_NOT_OK(_flush_segment_writer()); //刷写segment文件
     }
     return OLAP_SUCCESS;
 }
@@ -174,17 +177,18 @@ RowsetSharedPtr BetaRowsetWriter::build() {
     return rowset;
 }
 
+/*创建segment writer*/
 OLAPStatus BetaRowsetWriter::_create_segment_writer() {
     auto path = BetaRowset::segment_file_path(_context.rowset_path_prefix,
                                               _context.rowset_id,
                                               _num_segment);
     // TODO(lingbin): should use a more general way to get BlockManager object
     // and tablets with the same type should share one BlockManager object;
-    fs::BlockManager* block_mgr = fs::fs_util::block_manager();
+    fs::BlockManager* block_mgr = fs::fs_util::block_manager(); //获取文件块管理器block_mgr
     std::unique_ptr<fs::WritableBlock> wblock;
     fs::CreateBlockOptions opts({path});
     DCHECK(block_mgr != nullptr);
-    Status st = block_mgr->create_block(opts, &wblock);
+    Status st = block_mgr->create_block(opts, &wblock); //通过block_mgr创建一个可写入的文件块wblock，每一个文件块对应一个segment文件
     if (!st.ok()) {
         LOG(WARNING) << "failed to create writable block. path=" << path;
         return OLAP_ERR_INIT_FAILED;
@@ -193,30 +197,31 @@ OLAPStatus BetaRowsetWriter::_create_segment_writer() {
     DCHECK(wblock != nullptr);
     segment_v2::SegmentWriterOptions writer_options;
     _segment_writer.reset(new segment_v2::SegmentWriter(
-            wblock.get(), _num_segment, _context.tablet_schema, writer_options));
-    _wblocks.push_back(std::move(wblock));
+            wblock.get(), _num_segment, _context.tablet_schema, writer_options)); //针对新创建的文件块wblock创建一个SegmentWriter对象，并让成员变量_segment_writer指向它
+    _wblocks.push_back(std::move(wblock)); //将新创建的文件块添加到vector类型的成员变量_wblocks中进行维护
     // TODO set write_mbytes_per_sec based on writer type (load/base compaction/cumulative compaction)
-    auto s = _segment_writer->init(config::push_write_mbytes_per_sec);
+    auto s = _segment_writer->init(config::push_write_mbytes_per_sec); //初始化成员变量_segment_writer
     if (!s.ok()) {
         LOG(WARNING) << "failed to init segment writer: " << s.to_string();
         _segment_writer.reset(nullptr);
         return OLAP_ERR_INIT_FAILED;
     }
-    ++_num_segment;
+    ++_num_segment; //当前rowset中的segment数目增1
     return OLAP_SUCCESS;
 }
 
+/*执行segment flush*/
 OLAPStatus BetaRowsetWriter::_flush_segment_writer() {
     uint64_t segment_size;
     uint64_t index_size;
-    Status s = _segment_writer->finalize(&segment_size, &index_size);
+    Status s = _segment_writer->finalize(&segment_size, &index_size);//获取segment文件大小和索引大小
     if (!s.ok()) {
         LOG(WARNING) << "failed to finalize segment: " << s.to_string();
         return OLAP_ERR_WRITER_DATA_WRITE_ERROR;
     }
     _total_data_size += segment_size;
     _total_index_size += index_size;
-    _segment_writer.reset();
+    _segment_writer.reset(); //智能指针unique_ptr包装的_segment_writer置为空指针
     return OLAP_SUCCESS;
 }
 

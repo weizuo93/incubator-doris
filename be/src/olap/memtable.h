@@ -57,7 +57,7 @@ private:
     private:
         const Schema* _schema;
     };
-    typedef SkipList<char*, RowCursorComparator> Table;
+    typedef SkipList<char*, RowCursorComparator> Table; // 此处的Table指的是memtable，底层实质上是跳表SkipList
     typedef Table::key_type TableKey;
 
     void _tuple_to_row(const Tuple* tuple, ContiguousRow* row, MemPool* mem_pool);

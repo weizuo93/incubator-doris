@@ -75,7 +75,7 @@ private:
     // Note: Once its value is set to Failed, it cannot return to SUCCESS.
     std::atomic<OLAPStatus> _flush_status;
 
-    FlushStatistic _stats;
+    FlushStatistic _stats; //当前DeltaWriter对象的刷写统计数据
 };
 
 // MemTableFlushExecutor is responsible for flushing memtables to disk.

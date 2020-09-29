@@ -135,7 +135,7 @@ OLAPStatus DeltaWriter::init() {
     writer_context.tablet_id = _req.tablet_id;
     writer_context.partition_id = _req.partition_id;
     writer_context.tablet_schema_hash = _req.schema_hash;
-    writer_context.rowset_type = _storage_engine->default_rowset_type();
+    writer_context.rowset_type = _storage_engine->default_rowset_type();//rowset类型默认为alpha类型
     if (_tablet->tablet_meta()->preferred_rowset_type() == BETA_ROWSET) {
         writer_context.rowset_type = BETA_ROWSET;
     }
@@ -152,7 +152,7 @@ OLAPStatus DeltaWriter::init() {
     _reset_mem_table();
 
     // create flush handler
-    RETURN_NOT_OK(_storage_engine->memtable_flush_executor()->create_flush_token(&_flush_token));//创建flush token
+    RETURN_NOT_OK(_storage_engine->memtable_flush_executor()->create_flush_token(&_flush_token));//创建flush token,可以通过flush token进行memtable flush的各项操作
 
     _is_init = true;
     return OLAP_SUCCESS;
@@ -168,15 +168,15 @@ OLAPStatus DeltaWriter::write(Tuple* tuple) {
 
     // if memtable is full, push it to the flush executor,
     // and create a new memtable for incoming data
-    if (_mem_table->memory_usage() >= config::write_buffer_size) { //判断memtable是否已经写满
+    if (_mem_table->memory_usage() >= config::write_buffer_size) { //判断memtable是否已经写满(默认为100M)
         RETURN_NOT_OK(_flush_memtable_async());//将memtable提交到flush executor
         // create a new memtable for new incoming data
-        _reset_mem_table(); //创建新的memtable
+        _reset_mem_table(); //创建新的memtable对象，让shared_ptr包装的成员变量_mem_table指向新创建的memtable对象
     }
     return OLAP_SUCCESS;
 }
 
-/*通过flush token将memtable提交给flush executor*/
+/*通过flush token将memtable提交给flush executor执行刷写*/
 OLAPStatus DeltaWriter::_flush_memtable_async() {
     return _flush_token->submit(_mem_table);
 }
@@ -187,7 +187,7 @@ OLAPStatus DeltaWriter::flush_memtable_and_wait() {
         // equal means there is no memtable in flush queue, just flush this memtable
         VLOG(3) << "flush memtable to reduce mem consumption. memtable size: " << _mem_table->memory_usage()
                 << ", tablet: " << _req.tablet_id << ", load id: " << print_id(_req.load_id);
-        RETURN_NOT_OK(_flush_memtable_async());
+        RETURN_NOT_OK(_flush_memtable_async());//通过flush token将memtable提交给flush executor
         _reset_mem_table();//创建新的memtable
     } else {
         DCHECK(mem_consumption() > _mem_table->memory_usage());
@@ -198,11 +198,11 @@ OLAPStatus DeltaWriter::flush_memtable_and_wait() {
     return OLAP_SUCCESS;
 }
 
-/*创建新的memtable*/
+/*创建新的memtable对象，让shared_ptr包装的成员变量_mem_table指向新创建的memtable对象*/
 void DeltaWriter::_reset_mem_table() {
     _mem_table.reset(new MemTable(_tablet->tablet_id(), _schema.get(), _tablet_schema, _req.slots,
                                   _req.tuple_desc, _tablet->keys_type(), _rowset_writer.get(),
-                                  _mem_tracker.get()));
+                                  _mem_tracker.get()));//智能指针shared_ptr的reset()函数。p.reset(q)是将智能指针p重置为q
 }
 
 /*关闭DeltaWriter*/
@@ -216,7 +216,7 @@ OLAPStatus DeltaWriter::close() {
         RETURN_NOT_OK(init());
     }
 
-    RETURN_NOT_OK(_flush_memtable_async());
+    RETURN_NOT_OK(_flush_memtable_async()); // 通过flush token将memtable提交给flush executor
     _mem_table.reset(); //复位memtable
     return OLAP_SUCCESS;
 }
@@ -279,23 +279,26 @@ OLAPStatus DeltaWriter::close_wait(google::protobuf::RepeatedPtrField<PTabletInf
     return OLAP_SUCCESS;
 }
 
+/*取消DeltaWriter,丢弃当前的memtable，等待所有flush期间的memtable被销毁*/
 OLAPStatus DeltaWriter::cancel() {
     if (!_is_init) {
         return OLAP_SUCCESS;
     }
-    _mem_table.reset();
+    _mem_table.reset();//智能指针shared_ptr的reset()函数。p.reset()是将智能指针p重置为空指针
     if (_flush_token != nullptr) {
         // cancel and wait all memtables in flush queue to be finished
-        _flush_token->cancel();
+        _flush_token->cancel();  //发生错误，取消flush token，关闭线程池，移除队列中的所有task
     }
-    DCHECK_EQ(_mem_tracker->consumption(), 0);
+    DCHECK_EQ(_mem_tracker->consumption(), 0);//DeltaWriter被取消之后，当前DeltaWriter对象对应的内存消耗应该为0
     return OLAP_SUCCESS;
 }
 
+/*获取当前DeltaWriter对象对应的内存消耗量*/
 int64_t DeltaWriter::mem_consumption() const {
     return _mem_tracker->consumption();
 }
 
+/*获取当前DeltaWriter对象操作的memtable所对应tablet的partition id*/
 int64_t DeltaWriter::partition_id() const {
     return _req.partition_id;
 }

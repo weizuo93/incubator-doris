@@ -76,7 +76,7 @@ public:
     // mem_consumption() should be 0 after this function returns.
     OLAPStatus close_wait(google::protobuf::RepeatedPtrField<PTabletInfo>* tablet_vec);
 
-    // abandon current memtable and wait for all pending-flushing memtables to be destructed.
+    // abandon current memtable and wait for all pending-flushing(在flush期间的) memtables to be destructed.
     // mem_consumption() should be 0 after this function returns.
     OLAPStatus cancel();
 

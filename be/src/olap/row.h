@@ -29,6 +29,7 @@ class MemPool;
 class Arena;
 
 // The row has all columns layed out in memory based on the schema.column_offset()
+// 基于schema中列的偏移量（schema.column_offset()），ContiguousRow中包含了一行数据中所有column在内存中的布局
 struct ContiguousRow {
     ContiguousRow(const Schema* schema, const void* row) : _schema(schema), _row((void*)row) { }
     ContiguousRow(const Schema* schema, void* row) : _schema(schema), _row(row) { }
