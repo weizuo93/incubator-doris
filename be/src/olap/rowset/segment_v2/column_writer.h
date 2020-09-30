@@ -74,7 +74,7 @@ public:
 
     template<typename CellType>
     Status append(const CellType& cell) {
-        if (_is_nullable) {
+        if (_is_nullable) { //判断当前列是否可以为空
             uint8_t nullmap = 0;
             BitmapChange(&nullmap, 0, cell.is_null());
             return append_nullable(&nullmap, cell.cell_ptr(), 1);

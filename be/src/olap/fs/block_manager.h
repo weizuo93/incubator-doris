@@ -96,25 +96,30 @@ public:
     // Destroys the in-memory representation of the block and synchronizes
     // dirty block data and metadata with the disk. On success, guarantees
     // that the entire block is durable.
+    // 销毁文件块在内存中的表示，并将脏块数据和元数据同步到磁盘上。close()执行成功后，整个文件块是持久化在磁盘上的。
     virtual Status close() = 0;
 
     // Like close() but does not synchronize dirty data or metadata to disk.
     // Meaning, after a successful Abort(), the block no longer exists.
+    // 类似于close()函数，但是不会将脏块数据和元数据同步到磁盘上。abort()执行成功后，整个文件块将不再存在。
     virtual Status abort() = 0;
 
     // Get a pointer back to this block's manager.
+    // 获取当前文件块的指针
     virtual BlockManager* block_manager() const = 0;
 
     // Appends the chunk of data referenced by 'data' to the block.
     //
     // Does not guarantee durability of 'data'; close() must be called for all
     // outstanding data to reach the disk.
+    // 将一个slice的data追加到当前文件块的后面，但是append()并不保证数据能够保证数据的持久化，必须执行close()函数将文件块中的数据同步到磁盘上。
     virtual Status append(const Slice& data) = 0;
 
     // Appends multiple chunks of data referenced by 'data' to the block.
     //
     // Does not guarantee durability of 'data'; close() must be called for all
     // outstanding data to reach the disk.
+    // 将多个slice的data追加到当前文件块的后面，但是appendv()并不保证数据能够保证数据的持久化，必须执行close()函数将文件块中的数据同步到磁盘上。
     virtual Status appendv(const Slice* data, size_t data_cnt) = 0;
 
     // Signals that the block will no longer receive writes. Does not guarantee
@@ -124,12 +129,15 @@ public:
     // asynchronous flush of dirty block data to disk. If there is other work
     // to be done between the final Append() and the future close(),
     // finalize() will reduce the amount of time spent waiting for outstanding
-    // I/O to complete in close(). This is analogous to readahead or prefetching.
+    // I/O to complete in close(). This is analogous to read ahead or prefetching.
+    // 将文件块中的数据开始异步刷写到磁盘上，finalize()函数执行后，不能保证所有数据一定能持久化到磁盘上。finalize()是一个信号，表示文件块将不再接受数据写入。
     virtual Status finalize() = 0;
 
     // Returns the number of bytes successfully appended via Append().
+    // 获取已经添加到文件块中的字节数
     virtual size_t bytes_appended() const = 0;
 
+    // 获取文件块状态
     virtual State state() const = 0;
 };
 

@@ -88,6 +88,7 @@ OLAPStatus BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_conte
     return OLAP_SUCCESS;
 }
 
+/*将memtable中的一行数据添加到segment中*/
 template<typename RowType>
 OLAPStatus BetaRowsetWriter::_add_row(const RowType& row) {
     if (PREDICT_FALSE(_segment_writer == nullptr)) {
@@ -99,10 +100,10 @@ OLAPStatus BetaRowsetWriter::_add_row(const RowType& row) {
         LOG(WARNING) << "failed to append row: " << s.to_string();
         return OLAP_ERR_WRITER_DATA_WRITE_ERROR;
     }
-    // 当前segment的大小到达某个阈值或segment中的行数到达某个阈值，则执行segment flush
+    // 当前segment的大小到达某个设定的阈值或segment中的行数到达某个设定的阈值，则执行segment flush,因此，一个memtable可能会刷写出多个segment文件
     if (PREDICT_FALSE(_segment_writer->estimate_segment_size() >= MAX_SEGMENT_SIZE
             || _segment_writer->num_rows_written() >= _context.max_rows_per_segment)) {
-        RETURN_NOT_OK(_flush_segment_writer()); //刷写segment
+        RETURN_NOT_OK(_flush_segment_writer()); //刷写一个segment文件
     }
     ++_num_rows_written; //写入行数增1
     return OLAP_SUCCESS;
@@ -177,7 +178,7 @@ RowsetSharedPtr BetaRowsetWriter::build() {
     return rowset;
 }
 
-/*创建segment writer*/
+/*创建SegmentWriter对象*/
 OLAPStatus BetaRowsetWriter::_create_segment_writer() {
     auto path = BetaRowset::segment_file_path(_context.rowset_path_prefix,
                                               _context.rowset_id,
@@ -210,18 +211,18 @@ OLAPStatus BetaRowsetWriter::_create_segment_writer() {
     return OLAP_SUCCESS;
 }
 
-/*执行segment flush*/
+/*执行segment flush，通过segment writer向segment文件中刷写数据和索引*/
 OLAPStatus BetaRowsetWriter::_flush_segment_writer() {
     uint64_t segment_size;
     uint64_t index_size;
-    Status s = _segment_writer->finalize(&segment_size, &index_size);//获取segment文件大小和索引大小
+    Status s = _segment_writer->finalize(&segment_size, &index_size);//通过segment writer向segment文件中刷写数据和索引，并获取segment文件大小和索引数据大小
     if (!s.ok()) {
         LOG(WARNING) << "failed to finalize segment: " << s.to_string();
         return OLAP_ERR_WRITER_DATA_WRITE_ERROR;
     }
     _total_data_size += segment_size;
     _total_index_size += index_size;
-    _segment_writer.reset(); //智能指针unique_ptr包装的_segment_writer置为空指针
+    _segment_writer.reset(); //segment文件刷写完成，智能指针unique_ptr包装的_segment_writer置为空指针
     return OLAP_SUCCESS;
 }
 

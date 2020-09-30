@@ -35,6 +35,7 @@ inline void encode_fixed16_le(uint8_t* buf, uint16_t val) {
 #endif
 }
 
+/*将uint32_t(4字节)类型的val转化成小端数据格式little endian，并复制到uint8_t(1字节)数组buf中*/
 inline void encode_fixed32_le(uint8_t* buf, uint32_t val) {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
     memcpy(buf, &val, sizeof(val));
@@ -106,11 +107,12 @@ inline uint128_t decode_fixed128_le(const uint8_t* buf) {
 #endif
 }
 
+/*向dst后面追加val（对val进行小端little endian编码）*/
 template<typename T>
 inline void put_fixed32_le(T* dst, uint32_t val) {
     uint8_t buf[sizeof(val)];
-    encode_fixed32_le(buf, val);
-    dst->append((char*)buf, sizeof(buf));
+    encode_fixed32_le(buf, val);//将val转化成小端数据格式并复制到字符数组buf中
+    dst->append((char*)buf, sizeof(buf));//向dst后面追加buf（string的append(c, n)函数表示将字符数组c中前n个字符追加到当前字符串之后）
 }
 
 template<typename T>

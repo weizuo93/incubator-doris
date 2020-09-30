@@ -26,7 +26,7 @@ struct RowCursorCell {
     void set_is_null(bool is_null) const { *reinterpret_cast<bool*>(_ptr) = is_null; }
     void set_null() const { *reinterpret_cast<bool*>(_ptr) = true; }
     void set_not_null() const { *reinterpret_cast<bool*>(_ptr) = false; }
-    const void* cell_ptr() const { return (char*)_ptr + 1; }
+    const void* cell_ptr() const { return (char*)_ptr + 1; } //获取一行数据中某个cell(某个列)在内存中的地址
     void* mutable_cell_ptr() const { return (char*)_ptr + 1; }
 private:
     void* _ptr;

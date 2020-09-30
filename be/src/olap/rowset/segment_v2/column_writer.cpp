@@ -160,6 +160,7 @@ Status ColumnWriter::append_nulls(size_t num_rows) {
     return Status::OK();
 }
 
+/*向column writer中添加列数据，data为列数据的指针，num_rows为行数（多行中的同一列数据）*/
 Status ColumnWriter::append(const void* data, size_t num_rows) {
     return _append_data((const uint8_t**)&data, num_rows);
 }
@@ -167,25 +168,27 @@ Status ColumnWriter::append(const void* data, size_t num_rows) {
 // append data to page builder. this function will make sure that
 // num_rows must be written before return. And ptr will be modified
 // to next data should be written
+/*向page builder和各个index builder中添加列数据*/
 Status ColumnWriter::_append_data(const uint8_t** ptr, size_t num_rows) {
     size_t remaining = num_rows;
     while (remaining > 0) {
         size_t num_written = remaining;
-        RETURN_IF_ERROR(_page_builder->add(*ptr, &num_written));
+        //向_page_builder中添加列数据，add()函数中会修改num_written值，表示当前page在这一次添加了多少行（当前page可能还没有添加完num_written行就已经满了，添加的是每一行中的一个列数据）
+        RETURN_IF_ERROR(_page_builder->add(*ptr, &num_written)); ）
         if (_opts.need_zone_map) {
-            _zone_map_index_builder->add_values(*ptr, num_written);
+            _zone_map_index_builder->add_values(*ptr, num_written); //向_zone_map_index_builder中添加列数据
         }
         if (_opts.need_bitmap_index) {
-            _bitmap_index_builder->add_values(*ptr, num_written);
+            _bitmap_index_builder->add_values(*ptr, num_written); //向_bitmap_index_builder中添加列数据
         }
         if (_opts.need_bloom_filter) {
-            _bloom_filter_index_builder->add_values(*ptr, num_written);
+            _bloom_filter_index_builder->add_values(*ptr, num_written); //向_bloom_filter_index_builder中添加列数据
         }
 
-        bool is_page_full = (num_written < remaining);
-        remaining -= num_written;
-        _next_rowid += num_written;
-        *ptr += _field->size() * num_written;
+        bool is_page_full = (num_written < remaining); //如果num_written < remaining，则表示当前page已经满了（本次没有添加完所有的remaining行，当前page就已经满了，添加的是每一行中的一个列数据）
+        remaining -= num_written;             //修改循环条件变量，同时也是下一次需要添加的行数
+        _next_rowid += num_written;           //修正成员变量_next_rowid为下一次添加的数据的行id
+        *ptr += _field->size() * num_written; //修正指针为下一次要写的数据的位置
         // we must write null bits after write data, because we don't
         // know how many rows can be written into current page
         if (_is_nullable) {
@@ -193,7 +196,7 @@ Status ColumnWriter::_append_data(const uint8_t** ptr, size_t num_rows) {
         }
 
         if (is_page_full) {
-            RETURN_IF_ERROR(_finish_current_page());
+            RETURN_IF_ERROR(_finish_current_page()); //如果当前page已经写满，则结束当前page
         }
     }
     return Status::OK();

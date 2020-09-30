@@ -135,7 +135,7 @@ OLAPStatus MemTable::flush() {
             agg_finalize_row(&dst_row, _table_mem_pool.get()); //???
             RETURN_NOT_OK(_rowset_writer->add_row(dst_row)); //将dst_row添加到RowsetWriter对象(在DeltaWriter对象初始化时创建)中进行flush
         }
-        RETURN_NOT_OK(_rowset_writer->flush()); //通过RowsetWriter对象将memtable中的数据刷写到segment文件中
+        RETURN_NOT_OK(_rowset_writer->flush()); //memtable中的所有行都添加到了rowset writer中，通过RowsetWriter对象将memtable中的数据刷写到segment文件中
     }
     DorisMetrics::instance()->memtable_flush_total.increment(1);
     DorisMetrics::instance()->memtable_flush_duration_us.increment(duration_ns / 1000);

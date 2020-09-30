@@ -87,7 +87,7 @@ private:
     fs::WritableBlock* _wblock;
 
     SegmentFooterPB _footer;
-    std::unique_ptr<ShortKeyIndexBuilder> _index_builder;
+    std::unique_ptr<ShortKeyIndexBuilder> _index_builder; //前缀索引
     std::vector<std::unique_ptr<ColumnWriter>> _column_writers;
     uint32_t _row_count = 0;
 };

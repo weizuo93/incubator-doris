@@ -34,7 +34,7 @@ struct ContiguousRow {
     ContiguousRow(const Schema* schema, const void* row) : _schema(schema), _row((void*)row) { }
     ContiguousRow(const Schema* schema, void* row) : _schema(schema), _row(row) { }
     RowCursorCell cell(uint32_t cid) const {
-        return RowCursorCell((char*)_row + _schema->column_offset(cid));
+        return RowCursorCell((char*)_row + _schema->column_offset(cid)); //返回cid列在内存中的地址
     }
     void set_is_null(uint32_t cid, bool is_null) const {
         _schema->set_is_null(_row, cid, is_null);
