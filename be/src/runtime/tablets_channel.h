@@ -119,7 +119,7 @@ private:
     Status _close_status;
 
     // tablet_id -> TabletChannel
-    std::unordered_map<int64_t, DeltaWriter*> _tablet_writers;
+    std::unordered_map<int64_t, DeltaWriter*> _tablet_writers; //保存每一个tablet对应的DeltaWriter对象
 
     std::unordered_set<int64_t> _partition_ids;
 

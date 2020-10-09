@@ -72,14 +72,15 @@ public:
 
     Status init();
 
+    /*向当前ColumnWriter对象中追加一个列数据*/
     template<typename CellType>
     Status append(const CellType& cell) {
-        if (_is_nullable) { //判断当前列是否可以为空
+        if (_is_nullable) { //判断当前列数据是否可以为空
             uint8_t nullmap = 0;
             BitmapChange(&nullmap, 0, cell.is_null());
-            return append_nullable(&nullmap, cell.cell_ptr(), 1);
+            return append_nullable(&nullmap, cell.cell_ptr(), 1); //追加一个列数据,可以为null
         } else {
-            return append(cell.cell_ptr(), 1);
+            return append(cell.cell_ptr(), 1); //追加一个列数据，不为null
         }
     }
 

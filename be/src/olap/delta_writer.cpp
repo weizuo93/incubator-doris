@@ -27,6 +27,7 @@
 
 namespace doris {
 
+/*创建DeltaWriter对象*/
 OLAPStatus DeltaWriter::open(WriteRequest* req, MemTracker* mem_tracker, DeltaWriter** writer) {
     *writer = new DeltaWriter(req, mem_tracker, StorageEngine::instance());
     return OLAP_SUCCESS;

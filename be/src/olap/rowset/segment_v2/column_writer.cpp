@@ -202,6 +202,7 @@ Status ColumnWriter::_append_data(const uint8_t** ptr, size_t num_rows) {
     return Status::OK();
 }
 
+/*向column writer中追加列数据，数据可以为null，data为列数据的指针，num_rows为行数（多行中的同一列数据）*/
 Status ColumnWriter::append_nullable(
         const uint8_t* is_null_bits, const void* data, size_t num_rows) {
     const uint8_t* ptr = (const uint8_t*)data;
@@ -209,20 +210,20 @@ Status ColumnWriter::append_nullable(
     bool is_null = false;
     size_t this_run = 0;
     while ((this_run = null_iter.Next(&is_null)) > 0) {
-        if (is_null) {
-            _null_bitmap_builder->add_run(true, this_run);
+        if (is_null) { // 数据为空
+            _null_bitmap_builder->add_run(true, this_run); //向_null_bitmap_builder中添加多个null数据
             _next_rowid += this_run;
             if (_opts.need_zone_map) {
-                _zone_map_index_builder->add_nulls(this_run);
+                _zone_map_index_builder->add_nulls(this_run); //向_zone_map_index_builder中添加多个null数据
             }
             if (_opts.need_bitmap_index) {
-                _bitmap_index_builder->add_nulls(this_run);
+                _bitmap_index_builder->add_nulls(this_run); //向_bitmap_index_builder中添加多个null数据
             }
             if (_opts.need_bloom_filter) {
-                _bloom_filter_index_builder->add_nulls(this_run);
+                _bloom_filter_index_builder->add_nulls(this_run); //向_bloom_filter_index_builder中添加多个null数据
             }
-        } else {
-            RETURN_IF_ERROR(_append_data(&ptr, this_run));
+        } else {// 数据不为空
+            RETURN_IF_ERROR(_append_data(&ptr, this_run)); //向page builder和各个index builder中添加列数据
         }
     }
     return Status::OK();
