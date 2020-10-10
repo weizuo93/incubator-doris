@@ -80,7 +80,7 @@ Status TabletsChannel::open(const PTabletWriterOpenRequest& params) {
     return Status::OK();
 }
 
-/*根据参数params加载一个batch的数据，其中包含多行数据*/
+/*根据参数params加载一个batch的数据，其中包含多行数据，数据保存在参数params中*/
 Status TabletsChannel::add_batch(const PTabletWriterAddBatchRequest& params) {
     DCHECK(params.tablet_ids_size() == params.row_batch().num_rows());
     std::lock_guard<std::mutex> l(_lock);
