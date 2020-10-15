@@ -556,6 +556,7 @@ public class Catalog {
         }
     }
 
+    // 获取当前的Catalog对象
     public static Catalog getCurrentCatalog() {
         if (isCheckpointThread()) {
             // only checkpoint thread it self will goes here.

@@ -56,6 +56,7 @@ public class PaloFe {
     public static final String DORIS_HOME_DIR = System.getenv("DORIS_HOME");
     public static final String PID_DIR = System.getenv("PID_DIR");
 
+    // FE程序的入口
     public static void main(String[] args) {
         start(DORIS_HOME_DIR, PID_DIR, args);
     }
@@ -116,7 +117,7 @@ public class PaloFe {
 
             feServer.start();
             httpServer.start();
-            qeService.start();
+            qeService.start(); //启动mysql服务
 
             ThreadPoolManager.registerAllThreadPoolMetric();
 

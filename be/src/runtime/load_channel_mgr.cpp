@@ -90,7 +90,7 @@ Status LoadChannelMgr::init(int64_t process_mem_limit) {
     return Status::OK();
 }
 
-/*根据params打开对应load任务对应的LoadChannel*/
+/*根据params打开load任务对应的LoadChannel*/
 Status LoadChannelMgr::open(const PTabletWriterOpenRequest& params) {
     UniqueId load_id(params.id()); //获取load任务的id,PTabletWriterOpenRequest中的元素id表示当前load job的id
     std::shared_ptr<LoadChannel> channel;

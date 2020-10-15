@@ -48,12 +48,12 @@ if [ ! -f ${TP_DIR}/vars.sh ]; then
     echo "vars.sh is missing".
     exit 1
 fi
-. ${TP_DIR}/vars.sh
+. ${TP_DIR}/vars.sh  # 执行vars.sh脚本，其中定义了第三方库（thirdparty）源码的下载地址
 
 cd $TP_DIR
 
 # Download thirdparties.
-${TP_DIR}/download-thirdparty.sh
+${TP_DIR}/download-thirdparty.sh # 执行download-thirdparty.sh脚本，下载第三方依赖库的源码
 
 export LD_LIBRARY_PATH=$TP_DIR/installed/lib:$LD_LIBRARY_PATH
 
@@ -68,7 +68,7 @@ else
 fi
 
 # prepare installed prefix
-mkdir -p ${TP_DIR}/installed
+mkdir -p ${TP_DIR}/installed # 创建第三方库的安装目录
 
 check_prerequest() {
     local CMD=$1
@@ -692,6 +692,7 @@ build_cctz() {
 # we just comment it, instead of remove it.
 # build_llvm
 
+#依次执行第三方库的编译函数，编译第三方库
 build_libevent
 build_zlib
 build_lz4

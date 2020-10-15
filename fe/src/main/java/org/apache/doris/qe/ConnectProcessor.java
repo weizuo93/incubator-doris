@@ -106,11 +106,12 @@ public class ConnectProcessor {
         ctx.getState().setOk();
     }
 
+    /*query请求执行之后，将执行信息添加到Audit log中*/
     private void auditAfterExec(String origStmt, StatementBase parsedStmt, PQueryStatistics statistics) {
         // slow query
         long endTime = System.currentTimeMillis();
         long elapseMs = endTime - ctx.getStartTime();
-        
+
         ctx.getAuditEventBuilder().setEventType(EventType.AFTER_QUERY)
             .setState(ctx.getState().toString()).setQueryTime(elapseMs)
             .setScanBytes(statistics == null ? 0 : statistics.scan_bytes)
@@ -138,7 +139,7 @@ public class ConnectProcessor {
         } else {
             ctx.getAuditEventBuilder().setIsQuery(false);
         }
-        
+
         ctx.getAuditEventBuilder().setFeIp(FrontendOptions.getLocalHostAddress());
 
         // We put origin query stmt at the end of audit log, for parsing the log more convenient.
@@ -147,23 +148,24 @@ public class ConnectProcessor {
         } else {
             ctx.getAuditEventBuilder().setStmt(origStmt);
         }
-        
-        Catalog.getCurrentAuditEventProcessor().handleAuditEvent(ctx.getAuditEventBuilder().build());
+
+        Catalog.getCurrentAuditEventProcessor().handleAuditEvent(ctx.getAuditEventBuilder().build()); //将query请求的执行信息添加到Audit log中
     }
 
     // process COM_QUERY statement,
     // 只有在与请求客户端交互出现问题时候才抛出异常
+    /*处理query请求*/
     private void handleQuery() {
         MetricRepo.COUNTER_REQUEST_ALL.increase(1L);
         // convert statement to Java string
         String originStmt = null;
         try {
-            byte[] bytes = packetBuf.array();
-            int ending = packetBuf.limit() - 1;
+            byte[] bytes = packetBuf.array(); //ByteBuffer的array()方法返回的是整个缓冲区的数据，packetBuf中保存sql语句
+            int ending = packetBuf.limit() - 1; //ByteBuffer的limit()方法返回缓冲区的当前终点，不能对缓冲区超过终点的位置进行读写操作
             while (ending >= 1 && bytes[ending] == '\0') {
                 ending--;
             }
-            originStmt = new String(bytes, 1, ending, "UTF-8");
+            originStmt = new String(bytes, 1, ending, "UTF-8"); //从packetBuf中获取原始的sql语句
         } catch (UnsupportedEncodingException e) {
             // impossible
             LOG.error("UTF8 is not supported in this environment.");
@@ -172,28 +174,28 @@ public class ConnectProcessor {
         }
         ctx.getAuditEventBuilder().reset();
         ctx.getAuditEventBuilder()
-            .setTimestamp(System.currentTimeMillis())
-            .setClientIp(ctx.getMysqlChannel().getRemoteHostPortString())
-            .setUser(ctx.getQualifiedUser())
-            .setDb(ctx.getDatabase());
+            .setTimestamp(System.currentTimeMillis())                     //设置当前系统时间为auditlog中的时间戳
+            .setClientIp(ctx.getMysqlChannel().getRemoteHostPortString()) //获取当前query请求的mysql客户端ip和端口，并设置在auditlog中
+            .setUser(ctx.getQualifiedUser())                              //获取当前query请求的用户，并设置在auditlog中
+            .setDb(ctx.getDatabase());                                    //获取当前query请求的数据库，并设置在auditlog中
 
         // execute this query.
         StatementBase parsedStmt = null;
         try {
-            List<StatementBase> stmts = analyze(originStmt);
-            for (int i = 0; i < stmts.size(); ++i) {
+            List<StatementBase> stmts = analyze(originStmt); //对原始的sql语句进行分析，得到多个解析之后的sql语句
+            for (int i = 0; i < stmts.size(); ++i) {  //依次遍历每一个解析之后得到的sql语句
                 ctx.getState().reset();
                 if (i > 0) {
                     ctx.resetRetureRows();
                 }
-                parsedStmt = stmts.get(i);
+                parsedStmt = stmts.get(i);  //获取解析之后得到的第i个sql语句
                 parsedStmt.setOrigStmt(new OriginStatement(originStmt, i));
-                executor = new StmtExecutor(ctx, parsedStmt);
-                executor.execute();
+                executor = new StmtExecutor(ctx, parsedStmt); // 创建StmtExecutor对象
+                executor.execute(); // 执行解析之后得到的第i个sql语句
 
                 if (i != stmts.size() - 1) {
                     ctx.getState().serverStatus |= MysqlServerStatusFlag.SERVER_MORE_RESULTS_EXISTS;
-                    finalizeCommand();
+                    finalizeCommand(); //发送sql语句执行结束之后的响应包给MySQL客户端
                 }
             }
         } catch (IOException e) {
@@ -220,6 +222,7 @@ public class ConnectProcessor {
         // replace '\n' to '\\n' to make string in one line
         // TODO(cmy): when user send multi-statement, the executor is the last statement's executor.
         // We may need to find some way to resolve this.
+        // mysql请求执行之后，将sql的执行信息添加到Audit log中
         if (executor != null) {
             auditAfterExec(originStmt.replace("\n", " "), executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog());
         } else {
@@ -229,13 +232,14 @@ public class ConnectProcessor {
     }
 
     // analyze the origin stmt and return multi-statements
+    /*对原始的sql语句进行分析，并得到多个解析之后的sql语句*/
     private List<StatementBase> analyze(String originStmt) throws AnalysisException {
         LOG.debug("the originStmts are: {}", originStmt);
         // Parse statement with parser generated by CUP&FLEX
         SqlScanner input = new SqlScanner(new StringReader(originStmt), ctx.getSessionVariable().getSqlMode());
-        SqlParser parser = new SqlParser(input);
+        SqlParser parser = new SqlParser(input); //使用CUP&FLEX生成的sql解析器对原始的sql进行解析
         try {
-            return SqlParserUtils.getMultiStmts(parser);
+            return SqlParserUtils.getMultiStmts(parser); //返回解析之后得到的多个sql语句
         } catch (Error e) {
             throw new AnalysisException("Please check your sql, we meet an error when parsing.", e);
         } catch (AnalysisException e) {
@@ -301,9 +305,10 @@ public class ConnectProcessor {
         ctx.getState().setEof();
     }
 
+    /*处理一个MySQL请求*/
     private void dispatch() throws IOException {
-        int code = packetBuf.get();
-        MysqlCommand command = MysqlCommand.fromCode(code);
+        int code = packetBuf.get(); //获取要处理的MySQL请求的code （ByteBuffer的get()方法表示从buffer的position位置读取一个byte，并将position+1，为下次读写作准备）
+        MysqlCommand command = MysqlCommand.fromCode(code); //根据code获取MySQL请求的类型
         if (command == null) {
             ErrorReport.report(ErrorCode.ERR_UNKNOWN_COM_ERROR);
             ctx.getState().setError("Unknown command(" + command + ")");
@@ -313,6 +318,7 @@ public class ConnectProcessor {
         ctx.setCommand(command);
         ctx.setStartTime();
 
+        // 根据MySQL请求的类型进行对应的处理
         switch (command) {
             case COM_INIT_DB:
                 handleInitDb();
@@ -321,7 +327,7 @@ public class ConnectProcessor {
                 handleQuit();
                 break;
             case COM_QUERY:
-                handleQuery();
+                handleQuery(); //处理一个MySQL客户端发来的query请求
                 ctx.setStartTime();
                 break;
             case COM_FIELD_LIST:
@@ -337,6 +343,7 @@ public class ConnectProcessor {
         }
     }
 
+    /*获取mysql请求执行之后的响应包*/
     private ByteBuffer getResultPacket() {
         MysqlPacket packet = ctx.getState().toResponsePacket();
         if (packet == null) {
@@ -378,7 +385,7 @@ public class ConnectProcessor {
         }
 
         MysqlChannel channel = ctx.getMysqlChannel();
-        channel.sendAndFlush(packet);
+        channel.sendAndFlush(packet); //发送响应包给客户端
     }
 
     public TMasterOpResult proxyExecute(TMasterOpRequest request) {
@@ -396,7 +403,7 @@ public class ConnectProcessor {
             ctx.setRemoteIP(request.getUser_ip());
         }
         if (request.isSetTime_zone()) {
-            ctx.getSessionVariable().setTimeZone(request.getTime_zone());                       
+            ctx.getSessionVariable().setTimeZone(request.getTime_zone());
         }
         if (request.isSetStmt_id()) {
             ctx.setForwardedStmtId(request.getStmt_id());
@@ -483,10 +490,10 @@ public class ConnectProcessor {
         return result;
     }
 
-    // 处理一个MySQL请求，接收，处理，返回
+    /*处理一个MySQL请求(接收，处理，返回)*/
     public void processOnce() throws IOException {
         // set status of query to OK.
-        ctx.getState().reset();
+        ctx.getState().reset(); //设置MySQL的state为OK
         executor = null;
 
         // reset sequence id of MySQL protocol
@@ -494,7 +501,7 @@ public class ConnectProcessor {
         channel.setSequenceId(0);
         // read packet from channel
         try {
-            packetBuf = channel.fetchOnePacket();
+            packetBuf = channel.fetchOnePacket(); //从MySQL中获取一个packet，其中包含一条MySQL请求（sql语句）
             if (packetBuf == null) {
                 LOG.warn("Null packet received from network. remote: {}", channel.getRemoteHostPortString());
                 throw new IOException("Error happened when receiving packet.");
@@ -506,9 +513,9 @@ public class ConnectProcessor {
         }
 
         // dispatch
-        dispatch();
+        dispatch(); //处理接收到的MySQL请求
         // finalize
-        finalizeCommand();
+        finalizeCommand(); //发送请求结束之后的响应包给MySQL客户端
 
         ctx.setCommand(MysqlCommand.COM_SLEEP);
     }

@@ -48,12 +48,12 @@ public class QeService {
         if (nioEnabled) {
             mysqlServer = new NMysqlServer(port, scheduler);
         } else {
-            mysqlServer = new MysqlServer(port, scheduler);
+            mysqlServer = new MysqlServer(port, scheduler); //创建MysqlServer对象
         }
     }
 
     public void start() throws IOException {
-        if (!mysqlServer.start()) {
+        if (!mysqlServer.start()) { //启动mysql服务
             LOG.error("mysql server start failed");
             System.exit(-1);
         }

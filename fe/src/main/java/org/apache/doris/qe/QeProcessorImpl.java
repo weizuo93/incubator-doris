@@ -129,9 +129,9 @@ public final class QeProcessorImpl implements QeProcessor {
     }
 
     public static final class QueryInfo {
-        private final ConnectContext connectContext;
-        private final Coordinator coord;
-        private final String sql;
+        private final ConnectContext connectContext; //每一次客户端连接时，都会对应一个ConnectContext对象用于存储session信息
+        private final Coordinator coord;             //本次sql的协调器信息
+        private final String sql;                    //sql语句
         private final long startExecTime;
 
         // from Export, Pull load, Insert 

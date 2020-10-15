@@ -41,7 +41,7 @@ export DORIS_HOME=${ROOT}
 # build thirdparty libraries if necessary
 if [[ ! -f ${DORIS_THIRDPARTY}/installed/lib/libs2.a ]]; then  #判断libs2.a文件是否存在，并且是否为普通文件
     echo "Thirdparty libraries need to be build ..."
-    ${DORIS_THIRDPARTY}/build-thirdparty.sh                    #执行脚本build-thirdparty.sh
+    ${DORIS_THIRDPARTY}/build-thirdparty.sh                    #执行脚本build-thirdparty.sh下载并编译第三方依赖库
 fi
 
 #PARALLEL=$[$(nproc)/4+1]

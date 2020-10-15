@@ -54,6 +54,7 @@ if ! command -v ${md5sum_bin} >/dev/null 2>&1; then
     md5sum_bin=""
 fi
 
+#MD5校验函数
 md5sum_func() {
     local FILENAME=$1
     local DESC_DIR=$2
@@ -73,6 +74,7 @@ md5sum_func() {
     return 0
 }
 
+#下载第三方库的函数
 download_func() {
     local FILENAME=$1
     local DOWNLOAD_URL=$2
@@ -128,7 +130,7 @@ download_func() {
 
 # download thirdparty archives
 echo "===== Downloading thirdparty archives..."
-for TP_ARCH in ${TP_ARCHIVES[*]}
+for TP_ARCH in ${TP_ARCHIVES[*]}        # vars.sh脚本中定义了TP_ARCHIVES[]，其中包含了所有需要下载的第三方库的链接地址和MD5校验信息
 do
     NAME=$TP_ARCH"_NAME"
     MD5SUM=$TP_ARCH"_MD5SUM"
@@ -167,7 +169,7 @@ do
 done
 echo "===== Checking all thirdpart archives...done"
 
-# unpacking thirdpart archives
+# 依次解压下载的第三方库源码包 unpacking thirdpart archives
 echo "===== Unpacking all thirdparty archives..."
 TAR_CMD="tar"
 UNZIP_CMD="unzip"
@@ -210,6 +212,7 @@ do
 done
 echo "===== Unpacking all thirdparty archives...done"
 
+# 依次修补下载的第三方库源码文件
 echo "===== Patching thirdparty archives..."
 
 ###################################################################################

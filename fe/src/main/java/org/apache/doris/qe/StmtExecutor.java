@@ -222,6 +222,7 @@ public class StmtExecutor {
     // Execute one statement.
     // Exception:
     //  IOException: talk with client failed.
+    /*执行一条sql语句*/
     public void execute() throws Exception {
 
         long beginTimeInNanoSecond = TimeUtils.getStartTime();
@@ -241,12 +242,12 @@ public class StmtExecutor {
                 LOG.debug("no need to transfer to Master. stmt: {}", context.getStmtId());
             }
 
-            if (parsedStmt instanceof QueryStmt) {
+            if (parsedStmt instanceof QueryStmt) { //当前sql是查询语句
                 context.getState().setIsQuery(true);
                 int retryTime = Config.max_query_retry_time;
                 for (int i = 0; i < retryTime; i ++) {
                     try {
-                        handleQueryStmt();
+                        handleQueryStmt(); //处理当前的sql查询语句
                         if (context.getSessionVariable().isReportSucc()) {
                             writeProfile(beginTimeInNanoSecond);
                         }
@@ -272,7 +273,7 @@ public class StmtExecutor {
                 handleUseStmt();
             } else if (parsedStmt instanceof CreateTableAsSelectStmt) {
                 handleInsertStmt();
-            } else if (parsedStmt instanceof InsertStmt) { // Must ahead of DdlStmt because InserStmt is its subclass
+            } else if (parsedStmt instanceof InsertStmt) { //当前sql是插入语句 Must ahead of DdlStmt because InserStmt is its subclass
                 try {
                     handleInsertStmt();
                     if (context.getSessionVariable().isReportSucc()) {
@@ -561,6 +562,7 @@ public class StmtExecutor {
     }
 
     // Process a select statement.
+    /*处理sql查询语句*/
     private void handleQueryStmt() throws Exception {
         // Every time set no send flag and clean all data in buffer
         context.getMysqlChannel().reset();
@@ -577,7 +579,7 @@ public class StmtExecutor {
 
         if (queryStmt.isExplain()) {
             String explainString = planner.getExplainString(planner.getFragments(), queryStmt.isVerbose() ? TExplainLevel.VERBOSE: TExplainLevel.NORMAL.NORMAL);
-            handleExplainStmt(explainString);
+            handleExplainStmt(explainString); //处理Explain语句
             return;
         }
         coord = new Coordinator(context, analyzer, planner);
@@ -585,7 +587,7 @@ public class StmtExecutor {
         QeProcessorImpl.INSTANCE.registerQuery(context.queryId(), 
                 new QeProcessorImpl.QueryInfo(context, originStmt.originStmt, coord));
 
-        coord.exec();
+        coord.exec(); //执行查询操作，所有的执行计划在各自BE节点上开始执行之后，函数返回
 
         // if python's MysqlDb get error after sendfields, it can't catch the exception
         // so We need to send fields after first batch arrived
