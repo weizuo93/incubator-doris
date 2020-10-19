@@ -46,6 +46,7 @@ private:
     std::function<void()> _func;
 };
 
+/*ThreadPoolBuilder的构造函数*/
 ThreadPoolBuilder::ThreadPoolBuilder(string name) :
         _name(std::move(name)),
         _min_threads(0),
@@ -53,18 +54,21 @@ ThreadPoolBuilder::ThreadPoolBuilder(string name) :
         _max_queue_size(std::numeric_limits<int>::max()),
         _idle_timeout(MonoDelta::FromMilliseconds(500)) {}
 
+/*设置线程池中最小的线程数*/
 ThreadPoolBuilder& ThreadPoolBuilder::set_min_threads(int min_threads) {
     CHECK_GE(min_threads, 0);
     _min_threads = min_threads;
     return *this;
 }
 
+/*设置线程池中最大的线程数*/
 ThreadPoolBuilder& ThreadPoolBuilder::set_max_threads(int max_threads) {
     CHECK_GT(max_threads, 0);
     _max_threads = max_threads;
     return *this;
 }
 
+/*设置任务队列中最大的任务数*/
 ThreadPoolBuilder& ThreadPoolBuilder::set_max_queue_size(int max_queue_size) {
     _max_queue_size = max_queue_size;
     return *this;
@@ -75,12 +79,14 @@ ThreadPoolBuilder& ThreadPoolBuilder::set_idle_timeout(const MonoDelta& idle_tim
     return *this;
 }
 
+/*创建并初始化参数传入的ThreadPool对象*/
 Status ThreadPoolBuilder::build(std::unique_ptr<ThreadPool>* pool) const {
-    pool->reset(new ThreadPool(*this));
-    RETURN_IF_ERROR((*pool)->init());
+    pool->reset(new ThreadPool(*this)); //创建ThreadPool对象
+    RETURN_IF_ERROR((*pool)->init());   //初始化ThreadPool对象
     return Status::OK();
 }
 
+/*ThreadPoolToken的构造函数*/
 ThreadPoolToken::ThreadPoolToken(ThreadPool* pool,
         ThreadPool::ExecutionMode mode)
   : _mode(mode),
@@ -94,14 +100,17 @@ ThreadPoolToken::~ThreadPoolToken() {
     _pool->release_token(this);
 }
 
+/*通过当前ThreadPoolToken对象向线程池提交一个task*/
 Status ThreadPoolToken::submit(std::shared_ptr<Runnable> r) {
     return _pool->do_submit(std::move(r), this);
 }
 
+/*通过当前ThreadPoolToken对象向线程池提交一个任务函数*/
 Status ThreadPoolToken::submit_func(std::function<void()> f) {
-    return submit(std::make_shared<FunctionRunnable>(std::move(f)));
+    return submit(std::make_shared<FunctionRunnable>(std::move(f))); //将任务函数封装成FunctionRunnable对象
 }
 
+/*关闭当前ThreadPoolToken*/
 void ThreadPoolToken::shutdown() {
     MutexLock unique_lock(&(_pool->_lock));
     _pool->check_not_pool_thread_unlocked();
@@ -110,13 +119,13 @@ void ThreadPoolToken::shutdown() {
     // outside the lock, in case there are concurrent threads wanting to access
     // the ThreadPool. The task's destructors may acquire locks, etc, so this
     // also prevents lock inversions.
-    std::deque<ThreadPool::Task> to_release = std::move(_entries);
-    _pool->_total_queued_tasks -= to_release.size();
+    std::deque<ThreadPool::Task> to_release = std::move(_entries); //获取待释放的任务(属于当前token的任务)
+    _pool->_total_queued_tasks -= to_release.size(); //更新当前线程池任务队列中任务的数量
 
     switch (state()) {
       case State::IDLE:
         // There were no tasks outstanding; we can quiesce the token immediately.
-        transition(State::QUIESCED);
+        transition(State::QUIESCED); //将当前ThreadPoolToken对象的状态转换为State::QUIESCED
         break;
       case State::RUNNING:
         // There were outstanding tasks. If any are still running, switch to
@@ -130,23 +139,23 @@ void ThreadPoolToken::shutdown() {
         // transition symmetry with ThreadPool::shutdown.
         for (auto it = _pool->_queue.begin(); it != _pool->_queue.end();) {
             if (*it == this) {
-                it = _pool->_queue.erase(it);
+                it = _pool->_queue.erase(it); //从成员变量中移除当前ThreadPoolToken对象
             } else {
                 it++;
             }
         }
 
         if (_active_threads == 0) {
-            transition(State::QUIESCED);
+            transition(State::QUIESCED); //将当前ThreadPoolToken对象的状态转换为State::QUIESCED
             break;
         }
-        transition(State::QUIESCING);
+        transition(State::QUIESCING);    //将当前ThreadPoolToken对象的状态转换为State::QUIESCING
         FALLTHROUGH_INTENDED;
       case State::QUIESCING:
         // The token is already quiescing. Just wait for a worker thread to
         // switch it to QUIESCED.
-        while (state() != State::QUIESCED) {
-            _not_running_cond.wait();
+        while (state() != State::QUIESCED) { //等待当前ThreadPoolToken对象的状态变为State::QUIESCED
+            _not_running_cond.wait(); //线程休眠，等待被唤醒
         }
         break;
       default:
@@ -154,14 +163,16 @@ void ThreadPoolToken::shutdown() {
     }
 }
 
+/*线程休眠，直到通过当前ThreadPoolToken对象提交的task都被执行完毕*/
 void ThreadPoolToken::wait() {
     MutexLock unique_lock(&(_pool->_lock));
     _pool->check_not_pool_thread_unlocked();
     while (is_active()) {
-        _not_running_cond.wait();
+        _not_running_cond.wait(); //线程休眠，等待被唤醒
     }
 }
 
+/*线程休眠，直到通过当前ThreadPoolToken对象提交的task都被执行完毕，或到达参数设定的时间点*/
 bool ThreadPoolToken::wait_until(const MonoTime& until) {
     MutexLock unique_lock(&(_pool->_lock));
     _pool->check_not_pool_thread_unlocked();
@@ -173,10 +184,12 @@ bool ThreadPoolToken::wait_until(const MonoTime& until) {
     return true;
 }
 
+/*线程休眠，直到通过当前ThreadPoolToken对象提交的task都被执行完毕，或休眠时长到达参数设定的值*/
 bool ThreadPoolToken::wait_for(const MonoDelta& delta) {
     return wait_until(MonoTime::Now() + delta);
 }
 
+/*将ThreadPoolToken状态转换为参数传入的新状态*/
 void ThreadPoolToken::transition(State new_state) {
 #ifndef NDEBUG
     CHECK_NE(_state, new_state);
@@ -226,6 +239,7 @@ void ThreadPoolToken::transition(State new_state) {
     _state = new_state;
 }
 
+/*获取ThreadPoolToken对象状态对应的字符串*/
 const char* ThreadPoolToken::state_to_string(State s) {
     switch (s) {
         case State::IDLE: return "IDLE"; break;
@@ -236,6 +250,7 @@ const char* ThreadPoolToken::state_to_string(State s) {
     return "<cannot reach here>";
 }
 
+/*ThreadPool类的构造函数，使用ThreadPoolBuilder对象进行初始化*/
 ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
   : _name(builder._name),
     _min_threads(builder._min_threads),
@@ -260,14 +275,15 @@ ThreadPool::~ThreadPool() {
     shutdown();
 }
 
+/*线程池初始化*/
 Status ThreadPool::init() {
     if (!_pool_status.is_uninitialized()) {
         return Status::NotSupported("The thread pool is already initialized");
     }
     _pool_status = Status::OK();
     _num_threads_pending_start = _min_threads;
-    for (int i = 0; i < _min_threads; i++) {
-        Status status = create_thread();
+    for (int i = 0; i < _min_threads; i++) { //初始状态，按照_min_threads创建多个线程
+        Status status = create_thread(); //创建线程
         if (!status.ok()) {
             shutdown();
             return status;
@@ -276,6 +292,7 @@ Status ThreadPool::init() {
     return Status::OK();
 }
 
+/*关闭线程池*/
 void ThreadPool::shutdown() {
     MutexLock unique_lock(&_lock);
     check_not_pool_thread_unlocked();
@@ -290,11 +307,11 @@ void ThreadPool::shutdown() {
     // of the tasks outside the lock, in case there are concurrent threads
     // wanting to access the ThreadPool. The task's destructors may acquire
     // locks, etc, so this also prevents lock inversions.
-    _queue.clear();
+    _queue.clear(); //清空队列_queue
     std::deque<std::deque<Task>> to_release;
-    for (auto* t : _tokens) {
+    for (auto* t : _tokens) { //依次遍历当前线程池下的每一个ThreadPoolToken对象
         if (!t->_entries.empty()) {
-            to_release.emplace_back(std::move(t->_entries));
+            to_release.emplace_back(std::move(t->_entries)); //将每一个ThreadPoolToken对象下的线程添加到队列to_release中
         }
         switch (t->state()) {
           case ThreadPoolToken::State::IDLE:
@@ -334,6 +351,7 @@ void ThreadPool::shutdown() {
     }
 }
 
+/*创建一个新的token，并添加到成员变量_tokens中进行管理*/
 std::unique_ptr<ThreadPoolToken> ThreadPool::new_token(ExecutionMode mode) {
     MutexLock unique_lock(&_lock);
     std::unique_ptr<ThreadPoolToken> t(new ThreadPoolToken(this,mode));
@@ -341,6 +359,7 @@ std::unique_ptr<ThreadPoolToken> ThreadPool::new_token(ExecutionMode mode) {
     return t;
 }
 
+/*释放token，并从成员变量_tokens中移除*/
 void ThreadPool::release_token(ThreadPoolToken* t) {
     MutexLock unique_lock(&_lock);
     CHECK(!t->is_active()) << Substitute("Token with state $0 may not be released",
@@ -348,14 +367,17 @@ void ThreadPool::release_token(ThreadPoolToken* t) {
     CHECK_EQ(1, _tokens.erase(t));
 }
 
+/*向线程池提交任务，任务以Runnable对象的形式提交*/
 Status ThreadPool::submit(std::shared_ptr<Runnable> r) {
     return do_submit(std::move(r), _tokenless.get());
 }
 
+/*向线程池提交一个任务函数，并将任务函数封装成Runnable对象进行提交*/
 Status ThreadPool::submit_func(std::function<void()> f) {
     return submit(std::make_shared<FunctionRunnable>(std::move(f)));
 }
 
+/*通过ThreadPoolToken提交任务给线程池*/
 Status ThreadPool::do_submit(std::shared_ptr<Runnable> r, ThreadPoolToken* token) {
     DCHECK(token);
     MonoTime submit_time = MonoTime::Now();
@@ -410,22 +432,22 @@ Status ThreadPool::do_submit(std::shared_ptr<Runnable> r, ThreadPoolToken* token
     }
 
     Task task;
-    task.runnable = std::move(r);
+    task.runnable = std::move(r); //要提交的任务
     task.submit_time = submit_time;
 
     // Add the task to the token's queue.
-    ThreadPoolToken::State state = token->state();
+    ThreadPoolToken::State state = token->state(); //获取ThreadPoolToken状态
     DCHECK(state == ThreadPoolToken::State::IDLE ||
             state == ThreadPoolToken::State::RUNNING);
-    token->_entries.emplace_back(std::move(task));
+    token->_entries.emplace_back(std::move(task)); //将任务添加到ThreadPoolToken对象的成员变量_entries中
     if (state == ThreadPoolToken::State::IDLE ||
             token->mode() == ExecutionMode::CONCURRENT) {
-        _queue.emplace_back(token);
+        _queue.emplace_back(token);                //将当前的参数传入的token添加到线程池的成员变量_queue中
         if (state == ThreadPoolToken::State::IDLE) {
             token->transition(ThreadPoolToken::State::RUNNING);
         }
     }
-    _total_queued_tasks++;
+    _total_queued_tasks++; //更新成员变量_total_queued_tasks
 
     // Wake up an idle thread for this task. Choosing the thread at the front of
     // the list ensures LIFO semantics as idling threads are also added to the front.
@@ -434,13 +456,13 @@ Status ThreadPool::do_submit(std::shared_ptr<Runnable> r, ThreadPoolToken* token
     // processed by an active thread (or a thread we're about to create) at some
     // point in the future.
     if (!_idle_threads.empty()) {
-        _idle_threads.front().not_empty.notify_one();
-        _idle_threads.pop_front();
+        _idle_threads.front().not_empty.notify_one(); //唤醒一个空闲线程
+        _idle_threads.pop_front();                    //将唤醒的空闲线程从_idle_threads中删除
     }
     unique_lock.unlock();
 
     if (need_a_thread) {
-        Status status = create_thread();
+        Status status = create_thread(); //创建一个线程
         if (!status.ok()) {
             unique_lock.lock();
             _num_threads_pending_start--;
@@ -458,6 +480,7 @@ Status ThreadPool::do_submit(std::shared_ptr<Runnable> r, ThreadPoolToken* token
     return Status::OK();
 }
 
+/*线程休眠，直到被唤醒*/
 void ThreadPool::wait() {
     MutexLock unique_lock(&_lock);
     check_not_pool_thread_unlocked();
@@ -466,6 +489,7 @@ void ThreadPool::wait() {
     }
 }
 
+/*线程休眠，直到被唤醒或到达参数设定的时间点*/
 bool ThreadPool::wait_until(const MonoTime& until) {
     MutexLock unique_lock(&_lock);
     check_not_pool_thread_unlocked();
@@ -477,10 +501,12 @@ bool ThreadPool::wait_until(const MonoTime& until) {
     return true;
 }
 
+/*线程休眠，直到被唤醒或到达参数设定的时间间隔*/
 bool ThreadPool::wait_for(const MonoDelta& delta) {
     return wait_until(MonoTime::Now() + delta);
 }
 
+/*从任务队列中出队并执行一个任务*/
 void ThreadPool::dispatch_thread() {
     MutexLock unique_lock(&_lock);
     InsertOrDie(&_threads, Thread::current_thread());
@@ -535,12 +561,13 @@ void ThreadPool::dispatch_thread() {
         }
 
         // Get the next token and task to execute.
-        ThreadPoolToken* token = _queue.front();
-        _queue.pop_front();
+        ThreadPoolToken* token = _queue.front();        //从成员变量_queue队列中获取一个新的ThreadPoolToken对象
+        _queue.pop_front();                             //token出队
+        DCHECK_EQ(ThreadPoolToken::State::RUNNING, token->state());
         DCHECK_EQ(ThreadPoolToken::State::RUNNING, token->state());
         DCHECK(!token->_entries.empty());
-        Task task = std::move(token->_entries.front());
-        token->_entries.pop_front();
+        Task task = std::move(token->_entries.front()); //从当前token的_entries队列中获取任务
+        token->_entries.pop_front();                    //任务出队
         token->_active_threads++;
         --_total_queued_tasks;
         ++_active_threads;
@@ -548,7 +575,7 @@ void ThreadPool::dispatch_thread() {
         unique_lock.unlock();
 
         // Execute the task
-        task.runnable->run();
+        task.runnable->run(); //执行任务
 
         // Destruct the task while we do not hold the lock.
         //
@@ -598,14 +625,15 @@ void ThreadPool::dispatch_thread() {
     }
 }
 
+/*创建一个线程*/
 Status ThreadPool::create_thread() {
     return Thread::create("thread pool", Substitute("$0 [worker]", _name),
             &ThreadPool::dispatch_thread, this, nullptr);
 }
 
 void ThreadPool::check_not_pool_thread_unlocked() {
-    Thread* current = Thread::current_thread();
-    if (ContainsKey(_threads, current)) {
+    Thread* current = Thread::current_thread(); //获取当前线程
+    if (ContainsKey(_threads, current)) { //判断当前线程是否在std::unordered_set<Thread*>类型的成员变量_threads中管理
         LOG(FATAL) << Substitute("Thread belonging to thread pool '$0' with "
                 "name '$1' called pool function that would result in deadlock",
                 _name, current->name());

@@ -262,7 +262,7 @@ private:
     // Number of threads currently running.
     //
     // Protected by _lock.
-    int _num_threads;
+    int _num_threads; //当前正在运行的线程数(inactive_threads + _active_threads = _num_threads + _num_threads_pending_start)
 
     // Number of threads which are in the process of starting.
     // When these threads start, they will decrement this counter and
@@ -274,13 +274,13 @@ private:
     // Number of threads currently running and executing client tasks.
     //
     // Protected by _lock.
-    int _active_threads;
+    int _active_threads; //当前正在执行任务的线程数
 
     // Total number of client tasks queued, either directly (_queue) or
     // indirectly (_tokens).
     //
     // Protected by _lock.
-    int _total_queued_tasks;
+    int _total_queued_tasks; //当前任务队列中的任务数
 
     // All allocated tokens.
     //
@@ -291,7 +291,7 @@ private:
     // tokens; they are owned by clients and are removed from the FIFO on shutdown.
     //
     // Protected by _lock.
-    std::deque<ThreadPoolToken*> _queue;
+    std::deque<ThreadPoolToken*> _queue; //保存当前线程池下的所有ThreadPoolToken对象
 
     // Pointers to all running threads. Raw pointers are safe because a Thread
     // may only go out of scope after being removed from _threads.
@@ -384,7 +384,7 @@ private:
 
         // No new tasks may be submitted to the token. A worker thread is still
         // running a previously queued task.
-        QUIESCING,
+        QUIESCING, //静默
 
         // No new tasks may be submitted to the token. There are no active tasks
         // either. At this state, the token may only be destroyed.
@@ -433,7 +433,7 @@ private:
     State _state;
 
     // Queued client tasks.
-    std::deque<ThreadPool::Task> _entries;
+    std::deque<ThreadPool::Task> _entries; //任务队列，保存通过当前token提交的task
 
     // Condition variable for "token is idle". Waiters wake up when the token
     // transitions to IDLE or QUIESCED.
@@ -441,7 +441,7 @@ private:
 
     // Number of worker threads currently executing tasks belonging to this
     // token.
-    int _active_threads;
+    int _active_threads;                   //属于当前token的正在执行的任务线程数量
 
     DISALLOW_COPY_AND_ASSIGN(ThreadPoolToken);
 };
