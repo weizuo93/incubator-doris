@@ -39,8 +39,10 @@ class LoadChannel;
 // All dispatched load data for this backend is routed from this class
 /*
   Doris的一次数据加载（Load Job）对应一个LoadChannel对象，LoadChannel维护了一次数据导入的通道,相同BE上的所有LoadChannel对象
-  由LoadChannelMgr对象进行管理。数据加载时会将数据分为多个批次（batch）进行加载，每个batch对应一个TabletsChannel，每个TabletsChannel
-  中对应多个Tablet，每个Tablet对应一个DeltaWriter，每个DeltaWriter负责向一个MemTable中写数据。
+  由LoadChannelMgr对象进行管理。一次数据加载（Load Job）会将数据分为多个批次（batch）进行加载，不同batch的数据加载过程异步进行，
+  每个batch的加载对应一个TabletsChannel，这些TabletsChannel在LoadChannel中由成员变量_tablets_channels负责管理。每个TabletsChannel
+  中对应多个Tablet，每个Tablet对应一个DeltaWriter，每个DeltaWriter负责向一
+  个MemTable中写数据。
 */
 class LoadChannelMgr {
 public:

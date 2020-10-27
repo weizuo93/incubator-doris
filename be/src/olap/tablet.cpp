@@ -376,6 +376,7 @@ void Tablet::delete_expired_inc_rowsets() {
     save_meta();
 }
 
+/*获取参数传入的版本范围spec_version在tablet中包含的所有真实的rowset的版本信息*/
 OLAPStatus Tablet::capture_consistent_versions(const Version& spec_version, vector<Version>* version_path) const {
     OLAPStatus status = _rs_graph.capture_consistent_versions(spec_version, version_path);
     if (status != OLAP_SUCCESS) {
@@ -444,13 +445,15 @@ OLAPStatus Tablet::_capture_consistent_rowsets_unlocked(const vector<Version>& v
     return OLAP_SUCCESS;
 }
 
+/*获取参数传入的版本范围spec_version在tablet中包含的所有真实rowset,并为每一个rowset分别创建rowset reader，通过参数传回*/
 OLAPStatus Tablet::capture_rs_readers(const Version& spec_version, vector<RowsetReaderSharedPtr>* rs_readers) const {
     vector<Version> version_path;
-    RETURN_NOT_OK(capture_consistent_versions(spec_version, &version_path));
-    RETURN_NOT_OK(capture_rs_readers(version_path, rs_readers));
+    RETURN_NOT_OK(capture_consistent_versions(spec_version, &version_path)); //获取参数传入的版本范围spec_version在tablet中包含的所有真实rowset的版本信息
+    RETURN_NOT_OK(capture_rs_readers(version_path, rs_readers)); //为参数传入的多个rowset版本对应的rowset分别创建rowset reader，并通过参数传回
     return OLAP_SUCCESS;
 }
 
+/*为参数传入的多个rowset版本对应的rowset分别创建rowset reader，并通过参数传回*/
 OLAPStatus Tablet::capture_rs_readers(const vector<Version>& version_path, vector<RowsetReaderSharedPtr>* rs_readers) const {
     DCHECK(rs_readers != nullptr && rs_readers->empty());
     for (auto version : version_path) {
@@ -461,12 +464,12 @@ OLAPStatus Tablet::capture_rs_readers(const vector<Version>& version_path, vecto
             return OLAP_ERR_CAPTURE_ROWSET_READER_ERROR;
         }
         RowsetReaderSharedPtr rs_reader;
-        auto res = it->second->create_reader(&rs_reader);
+        auto res = it->second->create_reader(&rs_reader); //为当前版本的rowset创建rowset reader
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "failed to create reader for rowset:" << it->second->rowset_id();
             return OLAP_ERR_CAPTURE_ROWSET_READER_ERROR;
         }
-        rs_readers->push_back(std::move(rs_reader));
+        rs_readers->push_back(std::move(rs_reader)); //将新创建的rowset reader添加到vector类型的rs_readers中，通过参数传回
     }
     return OLAP_SUCCESS;
 }

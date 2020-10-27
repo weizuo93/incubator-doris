@@ -64,17 +64,18 @@ DeltaWriter::~DeltaWriter() {
     }
 }
 
+/*垃圾回收*/
 void DeltaWriter::_garbage_collection() {
     OLAPStatus rollback_status = OLAP_SUCCESS;
-    TxnManager* txn_mgr = _storage_engine->txn_manager();
+    TxnManager* txn_mgr = _storage_engine->txn_manager(); //获取事务管理器
     if (_tablet != nullptr) {
-        rollback_status = txn_mgr->rollback_txn(_req.partition_id, _tablet, _req.txn_id);
+        rollback_status = txn_mgr->rollback_txn(_req.partition_id, _tablet, _req.txn_id); //将事务回滚
     }
     // has to check rollback status, because the rowset maybe committed in this thread and
     // published in another thread, then rollback will failed.
     // when rollback failed should not delete rowset
     if (rollback_status == OLAP_SUCCESS) {
-        _storage_engine->add_unused_rowset(_cur_rowset);
+        _storage_engine->add_unused_rowset(_cur_rowset); //如果事务成功回滚，则将本次load生成的rowset添加到不可用rowset集合中
     }
     if (_new_tablet != nullptr) {
         rollback_status = txn_mgr->rollback_txn(_req.partition_id, _new_tablet, _req.txn_id);
@@ -222,6 +223,7 @@ OLAPStatus DeltaWriter::close() {
     return OLAP_SUCCESS;
 }
 
+/*更新rowset的meta信息，并向FE提交事务*/
 OLAPStatus DeltaWriter::close_wait(google::protobuf::RepeatedPtrField<PTabletInfo>* tablet_vec) {
     DCHECK(_is_init) << "delta writer is supposed be to initialized before close_wait() being called";
     // return error if previous flush failed
@@ -229,12 +231,12 @@ OLAPStatus DeltaWriter::close_wait(google::protobuf::RepeatedPtrField<PTabletInf
     DCHECK_EQ(_mem_tracker->consumption(), 0);
 
     // use rowset meta manager to save meta
-    _cur_rowset = _rowset_writer->build();
+    _cur_rowset = _rowset_writer->build(); //更新rowset的meta信息
     if (_cur_rowset == nullptr) {
         LOG(WARNING) << "fail to build rowset";
         return OLAP_ERR_MALLOC_ERROR;
     }
-    OLAPStatus res = _storage_engine->txn_manager()->commit_txn(
+    OLAPStatus res = _storage_engine->txn_manager()->commit_txn( //向FE提交事务
             _req.partition_id, _tablet, _req.txn_id, _req.load_id, _cur_rowset, false);
     if (res != OLAP_SUCCESS && res != OLAP_ERR_PUSH_TRANSACTION_ALREADY_EXIST) {
         LOG(WARNING) << "Failed to commit txn: " << _req.txn_id

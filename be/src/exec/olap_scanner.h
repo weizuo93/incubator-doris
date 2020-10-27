@@ -47,6 +47,7 @@ class OLAPReader;
 class RuntimeProfile;
 class Field;
 
+/*OlapScanner封装了对一个tablet的数据读取操作*/
 class OlapScanner {
 public:
     OlapScanner(

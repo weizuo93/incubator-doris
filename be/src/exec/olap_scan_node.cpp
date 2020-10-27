@@ -624,7 +624,7 @@ static Status get_hints(
     return Status::OK();
 }
 
-
+/*启动数据查询线程*/
 Status OlapScanNode::start_scan_thread(RuntimeState* state) {
     if (_scan_ranges.empty()) {
         _transfer_done = true;
@@ -649,7 +649,7 @@ Status OlapScanNode::start_scan_thread(RuntimeState* state) {
     int scanners_per_tablet = std::max(1, 64 / (int)_scan_ranges.size());
 
     std::unordered_set<std::string> disk_set;
-    for (auto& scan_range : _scan_ranges) {
+    for (auto& scan_range : _scan_ranges) { //依次遍历每一个scan_range
         std::vector<std::unique_ptr<OlapScanRange>>* ranges = &cond_ranges;
         std::vector<std::unique_ptr<OlapScanRange>> split_ranges;
         if (need_split) {
@@ -679,14 +679,14 @@ Status OlapScanNode::start_scan_thread(RuntimeState* state) {
                  ++j, ++i) {
                 scanner_ranges.push_back((*ranges)[i].get());
             }
-            OlapScanner* scanner = new OlapScanner(
+            OlapScanner* scanner = new OlapScanner( //创建OlapScanner对象
                 state, this, _olap_scan_node.is_preaggregation, _need_agg_finalize, *scan_range, scanner_ranges);
             // add scanner to pool before doing prepare.
             // so that scanner can be automatically deconstructed if prepare failed.
             _scanner_pool->add(scanner);
             RETURN_IF_ERROR(scanner->prepare(*scan_range, scanner_ranges, _olap_filter, _is_null_vector));
     
-            _olap_scanners.push_back(scanner);
+            _olap_scanners.push_back(scanner); //将创建OlapScanner对象添加到成员变量_olap_scanners中
             disk_set.insert(scanner->scan_disk());
         }
     }
@@ -1077,6 +1077,7 @@ Status OlapScanNode::normalize_noneq_binary_predicate(SlotDescriptor* slot, Colu
     return Status::OK();
 }
 
+/*转换线程*/
 void OlapScanNode::transfer_thread(RuntimeState* state) {
     // scanner open pushdown to scanThread
     state->resource_pool()->acquire_thread_token();
@@ -1158,11 +1159,11 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
         }
 
         auto iter = olap_scanners.begin();
-        while (iter != olap_scanners.end()) {
+        while (iter != olap_scanners.end()) { //依次遍历每一个OlapScanner对象，并将针对一个tablet执行数据读取的task添加到线程池
             PriorityThreadPool::Task task;
-            task.work_function = boost::bind(&OlapScanNode::scanner_thread, this, *iter);
+            task.work_function = boost::bind(&OlapScanNode::scanner_thread, this, *iter); //对一个tablet执行数据读取的task函数
             task.priority = _nice;
-            if (thread_pool->offer(task)) {
+            if (thread_pool->offer(task)) { //将任务添加到线程池
                 olap_scanners.erase(iter++);
             } else {
                 LOG(FATAL) << "Failed to assign scanner task to thread pool!";
@@ -1220,13 +1221,14 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
     _row_batch_added_cv.notify_all();
 }
 
+/*对一个tablet执行数据读取的task*/
 void OlapScanNode::scanner_thread(OlapScanner* scanner) {
     Status status = Status::OK();
     bool eos = false;
     RuntimeState* state = scanner->runtime_state();
     DCHECK(NULL != state);
     if (!scanner->is_open()) {
-        status = scanner->open();
+        status = scanner->open(); //打开reader
         if (!status.ok()) {
             std::lock_guard<SpinLock> guard(_status_mutex);
             _status = status;
@@ -1260,7 +1262,7 @@ void OlapScanNode::scanner_thread(OlapScanner* scanner) {
         RowBatch *row_batch = new RowBatch(
                 this->row_desc(), state->batch_size(), _runtime_state->fragment_mem_tracker());
         row_batch->set_scanner_id(scanner->id());
-        status = scanner->get_batch(_runtime_state, row_batch, &eos);
+        status = scanner->get_batch(_runtime_state, row_batch, &eos); //获取一个batch的数据
         if (!status.ok()) {
             LOG(WARNING) << "Scan thread read OlapScanner failed: " << status.to_string();
             eos = true;
@@ -1314,7 +1316,7 @@ void OlapScanNode::scanner_thread(OlapScanner* scanner) {
     if (eos) {
         // close out of batches lock. we do this before _progress update
         // that can assure this object can keep live before we finish.
-        scanner->close(_runtime_state);
+        scanner->close(_runtime_state);//关闭reader
 
         std::unique_lock<std::mutex> l(_scan_batches_lock);
         _progress.update(1);

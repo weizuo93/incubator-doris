@@ -173,7 +173,7 @@ Status TabletsChannel::close(int sender_id, bool* finished,
         for (auto writer : need_wait_writers) {
             // close may return failed, but no need to handle it here.
             // tablet_vec will only contains success tablet, and then let FE judge it.
-            writer->close_wait(tablet_vec); //关闭DeltaWriter
+            writer->close_wait(tablet_vec); //更新rowset的meta信息，并向FE提交事务
         }
         // TODO(gaodayue) clear and destruct all delta writers to make sure all memory are freed
         // DCHECK_EQ(_mem_tracker->consumption(), 0);

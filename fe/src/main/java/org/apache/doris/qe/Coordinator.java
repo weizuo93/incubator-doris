@@ -126,7 +126,7 @@ public class Coordinator {
     Status queryStatus = new Status();
 
     // save of related backends of this query
-    Map<TNetworkAddress, Long> addressToBackendID = Maps.newHashMap();
+    Map<TNetworkAddress, Long> addressToBackendID = Maps.newHashMap(); //保存本次查询相关的BE
 
     private ImmutableMap<Long, Backend> idToBackend = ImmutableMap.of();
 
@@ -169,7 +169,7 @@ public class Coordinator {
     // number of backends executing plan fragments on behalf of this query;
     // set in computeFragmentExecParams();
     // same as backend_exec_states_.size() after Exec()
-    private Set<TUniqueId> instanceIds = Sets.newHashSet();
+    private Set<TUniqueId> instanceIds = Sets.newHashSet(); //一个instance表示此次查询分配到一台BE上的执行计划（plan fragments）
     // instance id -> dummy value
     private MarkedCountDownLatch<TUniqueId, Long> profileDoneSignal;
 

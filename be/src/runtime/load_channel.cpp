@@ -41,7 +41,7 @@ LoadChannel::~LoadChannel() {
 
 /*打开LoadChannel，实质上是创建并初始化TabletsChannel对象，更新成员变量_tablets_channels*/
 Status LoadChannel::open(const PTabletWriterOpenRequest& params) {
-    int64_t index_id = params.index_id(); //获取本次batch加载的id,,PTabletWriterOpenRequest中的元素index_id表示当前load job中一个数据batch的id
+    int64_t index_id = params.index_id(); //获取本次batch加载的id,PTabletWriterOpenRequest中的元素index_id表示当前load job中一个数据batch的id
     std::shared_ptr<TabletsChannel> channel;
     {
         std::lock_guard<std::mutex> l(_lock);

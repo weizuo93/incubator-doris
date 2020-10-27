@@ -87,7 +87,7 @@ OLAPStatus CumulativeCompaction::pick_rowsets_to_compact() {
     std::sort(candidate_rowsets.begin(), candidate_rowsets.end(), Rowset::comparator);//对所有的候选rowset进行排序
     RETURN_NOT_OK(check_version_continuity(candidate_rowsets));//检查候选rowset的版本连续性
 
-    std::vector<RowsetSharedPtr> transient_rowsets;//用来保存需要执行cumulative compactiom的候选rowset
+    std::vector<RowsetSharedPtr> transient_rowsets;//用来保存需要执行cumulative compaction的候选rowset
     size_t compaction_score = 0;
     // the last delete version we meet when traversing candidate_rowsets
     Version last_delete_version { -1, -1 };
