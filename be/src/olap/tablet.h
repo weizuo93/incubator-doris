@@ -17,6 +17,7 @@
 
 #ifndef DORIS_BE_SRC_OLAP_TABLET_H
 #define DORIS_BE_SRC_OLAP_TABLET_H
+#include <deque>
 #include <functional>
 #include <memory>
 #include <set>
@@ -234,6 +235,11 @@ public:
     // return a json string to show the compaction status of this tablet
     void get_compaction_status(std::string* json_result);
 
+    void update_scan_record_deque(TabletScanRecord tablet_scan_record);
+    double average_interval_not_scanned(time_t now);
+    double average_rows_each_scan();
+    double average_bytes_each_scan();
+
 private:
     OLAPStatus _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;
@@ -301,6 +307,9 @@ private:
     // cumulative compaction policy
     std::unique_ptr<CumulativeCompactionPolicy> _cumulative_compaction_policy;
     std::string _cumulative_compaction_type;
+
+    int _scan_record_deque_max_len;
+    std::deque<TabletScanRecord> _scan_record_deque;
     DISALLOW_COPY_AND_ASSIGN(Tablet);
 
 public:

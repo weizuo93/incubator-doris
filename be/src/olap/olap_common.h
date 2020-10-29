@@ -98,6 +98,17 @@ struct TabletInfo {
     UniqueId tablet_uid;
 };
 
+struct TabletScanRecord {
+    TabletScanRecord(time_t in_scan_timestamp, int64_t in_scan_rows, int64_t in_scan_bytes) :
+    scan_timestamp(in_scan_timestamp),
+    scan_rows(in_scan_rows),
+    scan_bytes(in_scan_bytes) {}
+
+    time_t scan_timestamp;
+    int64_t scan_rows;
+    int64_t scan_bytes;
+};
+
 enum RangeCondition {
     GT = 0,     // greater than
     GE = 1,     // greater or equal

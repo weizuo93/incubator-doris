@@ -66,7 +66,8 @@ Tablet::Tablet(TabletMetaSharedPtr tablet_meta, DataDir* data_dir,
         _last_cumu_compaction_success_millis(0),
         _last_base_compaction_success_millis(0),
         _cumulative_point(K_INVALID_CUMULATIVE_POINT),
-        _cumulative_compaction_type(cumulative_compaction_type) {
+        _cumulative_compaction_type(cumulative_compaction_type),
+        _scan_record_deque_max_len(10) {
     // construct _timestamped_versioned_tracker from rs and stale rs meta
     _timestamped_version_tracker.construct_versioned_tracker(_tablet_meta->all_rs_metas(),
                                                              _tablet_meta->all_stale_rs_metas());
@@ -1307,6 +1308,45 @@ void Tablet::generate_tablet_meta_copy_unlocked(TabletMetaSharedPtr new_tablet_m
     TabletMetaPB tablet_meta_pb;
     _tablet_meta->to_meta_pb(&tablet_meta_pb);
     new_tablet_meta->init_from_pb(tablet_meta_pb);
+}
+
+void Tablet::update_scan_record_deque(TabletScanRecord tablet_scan_record) {
+    if (_scan_record_deque.size() < _scan_record_deque_max_len) { //_scan_timestamp_deque_max_len can be set by config
+        _scan_record_deque.push_back(tablet_scan_record);
+    } else {
+        _scan_record_deque.pop_front();
+        _scan_record_deque.push_back(tablet_scan_record);
+    }
+}
+
+double Tablet::average_interval_not_scanned(time_t now) {
+    double average_interval = 0;
+    std::deque<TabletScanRecord>::iterator scan_record_iter;
+    for (scan_record_iter = _scan_record_deque.begin(); scan_record_iter != _scan_record_deque.end(); scan_record_iter++) {
+        average_interval += difftime(now, scan_record_iter->scan_timestamp);
+    }
+    average_interval = average_interval / _scan_record_deque.size();
+    return average_interval;
+}
+
+double Tablet::average_rows_each_scan() {
+    double average_rows = 0.0;
+    std::deque<TabletScanRecord>::iterator scan_record_iter;
+    for (scan_record_iter = _scan_record_deque.begin(); scan_record_iter != _scan_record_deque.end(); scan_record_iter++) {
+        average_rows += scan_record_iter->scan_rows;
+    }
+    average_rows = average_rows / _scan_record_deque.size();
+    return average_rows;
+}
+
+double Tablet::average_bytes_each_scan() {
+    double average_bytes = 0.0;
+    std::deque<TabletScanRecord>::iterator scan_record_iter;
+    for (scan_record_iter = _scan_record_deque.begin(); scan_record_iter != _scan_record_deque.end(); scan_record_iter++) {
+        average_bytes += scan_record_iter->scan_bytes;
+    }
+    average_bytes = average_bytes / _scan_record_deque.size();
+    return average_bytes;
 }
 
 }  // namespace doris

@@ -501,6 +501,10 @@ void OlapScanner::update_counter() {
     _tablet->query_scan_bytes->increment(_compressed_bytes_read);
     _tablet->query_scan_rows->increment(_raw_rows_read);
 
+    time_t now = time(nullptr);
+    TabletScanRecord tablet_scan_record(now, _raw_rows_read, _compressed_bytes_read);
+    _tablet->update_scan_record_deque(tablet_scan_record);
+
     _has_update_counter = true;
 }
 
