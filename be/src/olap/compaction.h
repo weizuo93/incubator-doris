@@ -49,6 +49,8 @@ public:
 
     virtual OLAPStatus compact() = 0;
 
+    std::vector<RowsetSharedPtr>& get_input_rowsets() { return _input_rowsets; }
+
 protected:
     virtual OLAPStatus pick_rowsets_to_compact() = 0;
     virtual std::string compaction_name() const = 0;

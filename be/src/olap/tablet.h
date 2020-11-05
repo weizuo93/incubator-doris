@@ -234,6 +234,13 @@ public:
     // return a json string to show the compaction status of this tablet
     void get_compaction_status(std::string* json_result);
 
+    std::shared_ptr<CumulativeCompaction> get_cumulative_compaction() { return _cumulative_compaction; }
+    std::shared_ptr<BaseCompaction> get_base_compaction() { return _base_compaction; }
+    void create_cumulative_compaction();
+    void create_base_compaction(BaseCompaction* base_compaction_ptr);
+    int64_t prepare_compaction_and_calculate_permits(compaction_type);
+    void execute_compaction(compaction_type);
+
 private:
     OLAPStatus _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;
@@ -301,6 +308,9 @@ private:
     // cumulative compaction policy
     std::unique_ptr<CumulativeCompactionPolicy> _cumulative_compaction_policy;
     std::string _cumulative_compaction_type;
+
+    std::shared_ptr<CumulativeCompaction> _cumulative_compaction;
+    std::shared_ptr<BaseCompaction> _base_compaction;
     DISALLOW_COPY_AND_ASSIGN(Tablet);
 
 public:

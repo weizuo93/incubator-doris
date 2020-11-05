@@ -60,6 +60,42 @@ OLAPStatus BaseCompaction::compact() {
     return OLAP_SUCCESS;
 }
 
+OLAPStatus BaseCompaction::prepare_compact() {
+    if (!_tablet->init_succeeded()) {
+        return OLAP_ERR_INPUT_PARAMETER_ERROR;
+    }
+
+    MutexLock lock(_tablet->get_base_lock(), TRY_LOCK);
+    if (!lock.own_lock()) {
+        LOG(WARNING) << "another base compaction is running. tablet=" << _tablet->full_name();
+        return OLAP_ERR_BE_TRY_BE_LOCK_ERROR;
+    }
+    TRACE("got base compaction lock");
+
+    // 1. pick rowsets to compact
+    RETURN_NOT_OK(pick_rowsets_to_compact());
+    TRACE("rowsets picked");
+    TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
+    return OLAP_SUCCESS;
+}
+
+OLAPStatus BaseCompaction::execute_compact() {
+    // 2. do base compaction, merge rowsets
+    int64_t permits = _tablet->calc_base_compaction_score();
+    RETURN_NOT_OK(do_compaction(permits));
+    TRACE("compaction finished");
+
+    // 3. set state to success
+    _state = CompactionState::SUCCESS;
+
+    // 4. add metric to base compaction
+    DorisMetrics::instance()->base_compaction_deltas_total->increment(_input_rowsets.size());
+    DorisMetrics::instance()->base_compaction_bytes_total->increment(_input_rowsets_size);
+    TRACE("save base compaction metrics");
+
+    return OLAP_SUCCESS;
+}
+
 OLAPStatus BaseCompaction::pick_rowsets_to_compact() {
     _input_rowsets.clear();
     _tablet->pick_candidate_rowsets_to_base_compaction(&_input_rowsets);

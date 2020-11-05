@@ -74,6 +74,55 @@ OLAPStatus CumulativeCompaction::compact() {
     return OLAP_SUCCESS;
 }
 
+OLAPStatus CumulativeCompaction::prepare_compact() {
+    if (!_tablet->init_succeeded()) {
+        return OLAP_ERR_CUMULATIVE_INVALID_PARAMETERS;
+    }
+
+    MutexLock lock(_tablet->get_cumulative_lock(), TRY_LOCK);
+    if (!lock.own_lock()) {
+        LOG(INFO) << "The tablet is under cumulative compaction. tablet=" << _tablet->full_name();
+        return OLAP_ERR_CE_TRY_CE_LOCK_ERROR;
+    }
+    TRACE("got cumulative compaction lock");
+
+    // 1.calculate cumulative point
+    _tablet->calculate_cumulative_point();
+    TRACE("calculated cumulative point");
+    VLOG(1) << "after calculate, current cumulative point is " << _tablet->cumulative_layer_point()
+            << ", tablet=" << _tablet->full_name() ;
+
+    // 2. pick rowsets to compact
+    RETURN_NOT_OK(pick_rowsets_to_compact());
+    TRACE("rowsets picked");
+    TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
+
+    return OLAP_SUCCESS;
+}
+
+OLAPStatus CumulativeCompaction::execute_compact() {
+    // 3. do cumulative compaction, merge rowsets
+    int64_t permits = _tablet->calc_cumulative_compaction_score();
+    RETURN_NOT_OK(do_compaction(permits));
+    TRACE("compaction finished");
+
+    // 4. set state to success
+    _state = CompactionState::SUCCESS;
+
+    // 5. set cumulative point
+    _tablet->cumulative_compaction_policy()->update_cumulative_point(_tablet.get(), _input_rowsets, _output_rowset,
+                                                                     _last_delete_version);
+    LOG(INFO) << "after cumulative compaction, current cumulative point is "
+              << _tablet->cumulative_layer_point() << ", tablet=" << _tablet->full_name();
+
+    // 6. add metric to cumulative compaction
+    DorisMetrics::instance()->cumulative_compaction_deltas_total->increment(_input_rowsets.size());
+    DorisMetrics::instance()->cumulative_compaction_bytes_total->increment(_input_rowsets_size);
+    TRACE("save cumulative compaction metrics");
+
+    return OLAP_SUCCESS;
+}
+
 OLAPStatus CumulativeCompaction::pick_rowsets_to_compact() {
     std::vector<RowsetSharedPtr> candidate_rowsets;
 

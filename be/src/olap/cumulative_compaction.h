@@ -32,6 +32,9 @@ public:
 
     OLAPStatus compact() override;
 
+    OLAPStatus prepare_compact();
+    OLAPStatus execute_compact();
+
 protected:
     OLAPStatus pick_rowsets_to_compact() override;
 

@@ -1309,4 +1309,68 @@ void Tablet::generate_tablet_meta_copy_unlocked(TabletMetaSharedPtr new_tablet_m
     new_tablet_meta->init_from_pb(tablet_meta_pb);
 }
 
+void Tablet::create_cumulative_compaction() {
+    scoped_refptr<Trace> trace(new Trace);
+    MonotonicStopWatch watch;
+    watch.start();
+    SCOPED_CLEANUP({
+        if (watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
+           LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
+        }
+    });
+    ADOPT_TRACE(trace.get());
+    TRACE("start to perform cumulative compaction");
+
+    DorisMetrics::instance()->cumulative_compaction_request_total->increment(1);
+
+    std::string tracker_label = "cumulative compaction " + std::to_string(syscall(__NR_gettid));
+    _cumulative_compaction.reset(new CumulativeCompaction(std::shared_ptr<TabletSharedPtr>(this), tracker_label, _compaction_mem_tracker));
+}
+
+void Tablet::create_base_compaction() {
+    scoped_refptr<Trace> trace(new Trace);
+    MonotonicStopWatch watch;
+    watch.start();
+    SCOPED_CLEANUP({
+        if (watch.elapsed_time() / 1e9 > config::base_compaction_trace_threshold) {
+           LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
+        }
+    });
+    ADOPT_TRACE(trace.get());
+    TRACE("start to perform base compaction");
+
+    DorisMetrics::instance()->base_compaction_request_total->increment(1);
+
+    std::string tracker_label = "base compaction " + std::to_string(syscall(__NR_gettid));
+    _base_compaction.reset(new BaseCompaction(std::shared_ptr<TabletSharedPtr>(this), tracker_label, _compaction_mem_tracker));
+}
+
+int64_t Tablet::prepare_compaction_and_calculate_permits(compaction_type) {
+    int64_t score = 0;
+    std::vector<RowsetSharedPtr> compaction_rowsets;
+    if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
+        create_cumulative_compaction();
+        _cumulative_compaction->prepare_compact(); //加锁(统一CUMULATIVE_COMPACTION和BASE_COMPACTION的锁)
+        compaction_rowsets = _cumulative_compaction->get_input_rowsets();
+    } else {
+        DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
+        create_base_compaction();
+        _base_compaction->prepare_compact();       //加锁
+        compaction_rowsets = _base_compaction->get_input_rowsets();
+    }
+    for (auto rowset : compaction_rowsets) {
+        score += rowset->rowset_meta()->get_compaction_score();
+    }
+    return score;
+}
+
+void Tablet::execute_compaction(compaction_type) {
+    if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
+        _cumulative_compaction->execute_compact(); //解锁
+    } else {
+        DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
+        _base_compaction->execute_compact();       //解锁
+    }
+}
+
 }  // namespace doris
