@@ -49,6 +49,9 @@ public:
 
     virtual OLAPStatus compact() = 0;
 
+    virtual OLAPStatus prepare_compact() = 0;
+    virtual OLAPStatus execute_compact() = 0;
+
     std::vector<RowsetSharedPtr>& get_input_rowsets() { return _input_rowsets; }
 
 protected:

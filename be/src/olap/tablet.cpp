@@ -1309,53 +1309,35 @@ void Tablet::generate_tablet_meta_copy_unlocked(TabletMetaSharedPtr new_tablet_m
     new_tablet_meta->init_from_pb(tablet_meta_pb);
 }
 
-void Tablet::create_cumulative_compaction() {
-    scoped_refptr<Trace> trace(new Trace);
-    MonotonicStopWatch watch;
-    watch.start();
-    SCOPED_CLEANUP({
-        if (watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
-           LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
-        }
-    });
-    ADOPT_TRACE(trace.get());
-    TRACE("start to perform cumulative compaction");
-
-    DorisMetrics::instance()->cumulative_compaction_request_total->increment(1);
-
-    std::string tracker_label = "cumulative compaction " + std::to_string(syscall(__NR_gettid));
-    _cumulative_compaction.reset(new CumulativeCompaction(std::shared_ptr<TabletSharedPtr>(this), tracker_label, _compaction_mem_tracker));
-}
-
-void Tablet::create_base_compaction() {
-    scoped_refptr<Trace> trace(new Trace);
-    MonotonicStopWatch watch;
-    watch.start();
-    SCOPED_CLEANUP({
-        if (watch.elapsed_time() / 1e9 > config::base_compaction_trace_threshold) {
-           LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
-        }
-    });
-    ADOPT_TRACE(trace.get());
-    TRACE("start to perform base compaction");
-
-    DorisMetrics::instance()->base_compaction_request_total->increment(1);
-
-    std::string tracker_label = "base compaction " + std::to_string(syscall(__NR_gettid));
-    _base_compaction.reset(new BaseCompaction(std::shared_ptr<TabletSharedPtr>(this), tracker_label, _compaction_mem_tracker));
-}
-
-int64_t Tablet::prepare_compaction_and_calculate_permits(compaction_type) {
+int64_t Tablet::prepare_compaction_and_calculate_permits(CompactionType compaction_type, TabletSharedPtr tablet) {
     int64_t score = 0;
     std::vector<RowsetSharedPtr> compaction_rowsets;
     if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
-        create_cumulative_compaction();
-        _cumulative_compaction->prepare_compact(); //加锁(统一CUMULATIVE_COMPACTION和BASE_COMPACTION的锁)
+        StorageEngine::instance()->create_cumulative_compaction(tablet, _cumulative_compaction);
+        OLAPStatus res = _cumulative_compaction->prepare_compact();
+        if (res != OLAP_SUCCESS) {
+            if (res != OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSIONS) {
+                set_last_cumu_compaction_failure_time(UnixMillis());
+                DorisMetrics::instance()->cumulative_compaction_request_failed->increment(1);
+                LOG(WARNING) << "failed to do cumulative compaction. res=" << res
+                             << ", tablet=" << full_name();
+            }
+            return 0;
+        }
         compaction_rowsets = _cumulative_compaction->get_input_rowsets();
     } else {
         DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
-        create_base_compaction();
-        _base_compaction->prepare_compact();       //加锁
+        StorageEngine::instance()->create_base_compaction(tablet, _base_compaction);
+        OLAPStatus res = _base_compaction->prepare_compact();
+        if (res != OLAP_SUCCESS) {
+            set_last_base_compaction_failure_time(UnixMillis());
+            if (res != OLAP_ERR_BE_NO_SUITABLE_VERSION) {
+                DorisMetrics::instance()->base_compaction_request_failed->increment(1);
+                LOG(WARNING) << "failed to init base compaction. res=" << res
+                             << ", tablet=" << best_tablet->full_name();
+            }
+            return 0;
+        }
         compaction_rowsets = _base_compaction->get_input_rowsets();
     }
     for (auto rowset : compaction_rowsets) {
@@ -1364,12 +1346,44 @@ int64_t Tablet::prepare_compaction_and_calculate_permits(compaction_type) {
     return score;
 }
 
-void Tablet::execute_compaction(compaction_type) {
+void Tablet::execute_compaction(CompactionType compaction_type) {
     if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
-        _cumulative_compaction->execute_compact(); //解锁
+        OLAPStatus res = _cumulative_compaction->execute_compact();
+        if (res != OLAP_SUCCESS) {
+            if (res != OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSIONS) {
+                set_last_cumu_compaction_failure_time(UnixMillis());
+                DorisMetrics::instance()->cumulative_compaction_request_failed->increment(1);
+                LOG(WARNING) << "failed to do cumulative compaction. res=" << res
+                             << ", table=" << best_tablet->full_name();
+            }
+            // clear_compaction(compaction_type);
+            return;
+        }
+        set_last_cumu_compaction_failure_time(0);
     } else {
         DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
-        _base_compaction->execute_compact();       //解锁
+        OLAPStatus res = _base_compaction->execute_compact();
+        if (res != OLAP_SUCCESS) {
+            set_last_base_compaction_failure_time(UnixMillis());
+            if (res != OLAP_ERR_BE_NO_SUITABLE_VERSION) {
+                DorisMetrics::instance()->base_compaction_request_failed->increment(1);
+                LOG(WARNING) << "failed to init base compaction. res=" << res
+                             << ", table=" << best_tablet->full_name();
+            }
+            // clear_compaction(compaction_type);
+            return;
+        }
+        set_last_base_compaction_failure_time(0);
+    }
+    //clear_compaction(compaction_type);
+}
+
+void Tablet::clear_compaction(CompactionType compaction_type) {
+    if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
+        _cumulative_compaction.reset();
+    } else {
+        DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
+        _base_compaction.reset();
     }
 }
 

@@ -27,6 +27,8 @@
 #include "gen_cpp/AgentService_types.h"
 #include "gen_cpp/MasterService_types.h"
 #include "gen_cpp/olap_file.pb.h"
+#include "olap/base_compaction.h"
+#include "olap/cumulative_compaction.h"
 #include "olap/data_dir.h"
 #include "olap/olap_define.h"
 #include "olap/tuple.h"
@@ -236,10 +238,11 @@ public:
 
     std::shared_ptr<CumulativeCompaction> get_cumulative_compaction() { return _cumulative_compaction; }
     std::shared_ptr<BaseCompaction> get_base_compaction() { return _base_compaction; }
-    void create_cumulative_compaction();
-    void create_base_compaction(BaseCompaction* base_compaction_ptr);
-    int64_t prepare_compaction_and_calculate_permits(compaction_type);
-    void execute_compaction(compaction_type);
+    void create_cumulative_compaction(TabletSharedPtr tablet);
+    void create_base_compaction(TabletSharedPtr tablet);
+    int64_t prepare_compaction_and_calculate_permits(CompactionType compaction_type, TabletSharedPtr tablet);
+    void execute_compaction(CompactionType compaction_type);
+    void clear_compaction(CompactionType compaction_type);
 
 private:
     OLAPStatus _init_once_action();

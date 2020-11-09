@@ -349,9 +349,9 @@ void StorageEngine::_compaction_tasks_producer_callback() {
                 continue;
             }
             for (const auto& tablet : tablets_compaction) {
-                int64_t permits = tablet->prepare_compaction_and_calculate_permits(compaction_type);
+                int64_t permits = tablet->prepare_compaction_and_calculate_permits(compaction_type, tablet);
                 if (permits == 0) {
-                    // 不满足compaction条件，释放compaction锁，销毁compaction对象（reset()）
+                    // clear_compaction(compaction_type);
                     continue;
                 }
                 if (_permit_limiter.request(permits)) {
@@ -363,7 +363,6 @@ void StorageEngine::_compaction_tasks_producer_callback() {
                     }
                     auto st =_compaction_thread_pool->submit_func([=]() {
                         CgroupsMgr::apply_system_cgroup();
-                        // _perform_cumulative_compaction(tablet);
                         tablet->execute_compaction(compaction_type);
                         _permit_limiter.release(permits);
                         std::unique_lock<std::mutex> lock(_tablet_submitted_compaction_mutex);
@@ -380,7 +379,7 @@ void StorageEngine::_compaction_tasks_producer_callback() {
                     });
                     if (!st.ok()) {
                         _permit_limiter.release(permits);
-                        // 释放compaction锁
+                        // clear_compaction(compaction_type);
                     }
                 }
             }

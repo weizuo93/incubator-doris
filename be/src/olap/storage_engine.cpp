@@ -574,7 +574,7 @@ void StorageEngine::_start_clean_fd_cache() {
     VLOG(10) << "end clean file descritpor cache";
 }
 
-void StorageEngine::_perform_cumulative_compaction(TabletSharedPtr best_tablet) {
+void StorageEngine::create_cumulative_compaction(TabletSharedPtr best_tablet, std::shared_ptr<CumulativeCompaction> &cumulative_compaction) {
     scoped_refptr<Trace> trace(new Trace);
     MonotonicStopWatch watch;
     watch.start();
@@ -589,6 +589,8 @@ void StorageEngine::_perform_cumulative_compaction(TabletSharedPtr best_tablet) 
     DorisMetrics::instance()->cumulative_compaction_request_total->increment(1);
 
     std::string tracker_label = "cumulative compaction " + std::to_string(syscall(__NR_gettid));
+    cumulative_compaction.reset(new CumulativeCompaction(best_tablet, tracker_label, _compaction_mem_tracker));
+    /*
     CumulativeCompaction cumulative_compaction(best_tablet, tracker_label, _compaction_mem_tracker);
 
     OLAPStatus res = cumulative_compaction.compact();
@@ -602,9 +604,10 @@ void StorageEngine::_perform_cumulative_compaction(TabletSharedPtr best_tablet) 
         return;
     }
     best_tablet->set_last_cumu_compaction_failure_time(0);
+     */
 }
 
-void StorageEngine::_perform_base_compaction(TabletSharedPtr best_tablet) {
+void StorageEngine::create_base_compaction(TabletSharedPtr best_tablet, std::shared_ptr<BaseCompaction> &base_compaction) {
     scoped_refptr<Trace> trace(new Trace);
     MonotonicStopWatch watch;
     watch.start();
@@ -619,6 +622,8 @@ void StorageEngine::_perform_base_compaction(TabletSharedPtr best_tablet) {
     DorisMetrics::instance()->base_compaction_request_total->increment(1);
 
     std::string tracker_label = "base compaction " + std::to_string(syscall(__NR_gettid));
+    base_compaction.reset(new BaseCompaction(best_tablet, tracker_label, _compaction_mem_tracker));
+    /*
     BaseCompaction base_compaction(best_tablet, tracker_label, _compaction_mem_tracker);
     OLAPStatus res = base_compaction.compact();
     if (res != OLAP_SUCCESS) {
@@ -631,6 +636,7 @@ void StorageEngine::_perform_base_compaction(TabletSharedPtr best_tablet) {
         return;
     }
     best_tablet->set_last_base_compaction_failure_time(0);
+     */
 }
 
 OLAPStatus StorageEngine::_start_trash_sweep(double* usage) {
