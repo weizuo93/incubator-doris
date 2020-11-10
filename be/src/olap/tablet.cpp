@@ -126,7 +126,7 @@ void Tablet::save_meta() {
     _schema = _tablet_meta->tablet_schema();//重新获取tablet的schema
 }
 
-/*完成clone工作之后，更新本地tablet meta，一般用于clone task中*/
+/*完成clone工作之后，更新本地tablet，一般用于clone task中*/
 OLAPStatus Tablet::revise_tablet_meta(const vector<RowsetMetaSharedPtr>& rowsets_to_clone, const vector<Version>& versions_to_delete) {
     LOG(INFO) << "begin to clone data to tablet. tablet=" << full_name()
               << ", rowsets_to_clone=" << rowsets_to_clone.size()
@@ -134,11 +134,11 @@ OLAPStatus Tablet::revise_tablet_meta(const vector<RowsetMetaSharedPtr>& rowsets
     OLAPStatus res = OLAP_SUCCESS;
     do {
         // load new local tablet_meta to operate on
-        TabletMetaSharedPtr new_tablet_meta(new (nothrow) TabletMeta());
-        generate_tablet_meta_copy(new_tablet_meta);
+        TabletMetaSharedPtr new_tablet_meta(new (nothrow) TabletMeta()); //创建TabletMetaSharedPtr对象
+        generate_tablet_meta_copy(new_tablet_meta); //生成当前tablet meta的拷贝，保存在参数new_tablet_meta中
 
         // delete versions from new local tablet_meta
-        for (const Version& version : versions_to_delete) {
+        for (const Version& version : versions_to_delete) { //根据参数传入的versions_to_delete从new_tablet_meta中删除对应version的rowset
             new_tablet_meta->delete_rs_meta_by_version(version, nullptr);
             if (new_tablet_meta->version_for_delete_predicate(version)) {
                 new_tablet_meta->remove_delete_predicate_by_version(version);
@@ -147,43 +147,43 @@ OLAPStatus Tablet::revise_tablet_meta(const vector<RowsetMetaSharedPtr>& rowsets
                     << full_name() << ", version=" << version << "]";
         }
 
-        for (auto& rs_meta : rowsets_to_clone) {
+        for (auto& rs_meta : rowsets_to_clone) { //依次将参数rowsets_to_clone传入的rowset添加到new_tablet_meta中
             new_tablet_meta->add_rs_meta(rs_meta);
         }
         VLOG(3) << "load rowsets successfully when clone. tablet=" << full_name()
                 << ", added rowset size=" << rowsets_to_clone.size();
         // save and reload tablet_meta
-        res = new_tablet_meta->save_meta(_data_dir);
+        res = new_tablet_meta->save_meta(_data_dir); //在磁盘上保存new_tablet_meta
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "failed to save new local tablet_meta when clone. res:" << res;
             break;
         }
-        _tablet_meta = new_tablet_meta;
+        _tablet_meta = new_tablet_meta; //在磁盘上成功保存new_tablet_meta之后，使用new_tablet_meta更新当前tablet的meta
     } while (0);
 
-    for (auto& version : versions_to_delete) {
+    for (auto& version : versions_to_delete) { //按照version依次遍历需要删除的rowset
         auto it = _rs_version_map.find(version);
         DCHECK(it != _rs_version_map.end());
-        StorageEngine::instance()->add_unused_rowset(it->second);
-        _rs_version_map.erase(it);
+        StorageEngine::instance()->add_unused_rowset(it->second); //将待删除的rowset标记为不可用
+        _rs_version_map.erase(it); //从_rs_version_map中删除对应的rowset
     }
-    for (auto& it : _inc_rs_version_map) {
+    for (auto& it : _inc_rs_version_map) { //遍历_inc_rs_version_map中的rowset，依次标记为不可用
         StorageEngine::instance()->add_unused_rowset(it.second);
     }
     _inc_rs_version_map.clear();
 
-    for (auto& rs_meta : rowsets_to_clone) {
+    for (auto& rs_meta : rowsets_to_clone) { //按照rs_meta依次创建rowset
         Version version = { rs_meta->start_version(), rs_meta->end_version() };
         RowsetSharedPtr rowset;
-        res = RowsetFactory::create_rowset(&_schema, _tablet_path, rs_meta, &rowset);
+        res = RowsetFactory::create_rowset(&_schema, _tablet_path, rs_meta, &rowset); //创建rowset
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "fail to init rowset. version=" << version;
             return res;
         }
-        _rs_version_map[version] = std::move(rowset);
+        _rs_version_map[version] = std::move(rowset); //将创建的rowset添加到成员变量_rs_version_map中进行管理
     }
 
-    _rs_graph.reconstruct_rowset_graph(_tablet_meta->all_rs_metas());
+    _rs_graph.reconstruct_rowset_graph(_tablet_meta->all_rs_metas()); //更新成员变量_rs_graph
 
     LOG(INFO) << "finish to clone data to tablet. res=" << res << ", "
               << "table=" << full_name() << ", "
@@ -596,7 +596,7 @@ void Tablet::compute_version_hash_from_rowsets(const std::vector<RowsetSharedPtr
     *version_hash = v_hash;
 }
 
-/*计算丢失的版本*/
+/*计算tablet中从version=0开始，直到参数spec_version之间所有缺失的version，通过参数missed_versions传回*/
 void Tablet::calc_missed_versions(int64_t spec_version, vector<Version>* missed_versions) {
     ReadLock rdlock(&_meta_lock);
     calc_missed_versions_unlocked(spec_version, missed_versions);
@@ -606,33 +606,34 @@ void Tablet::calc_missed_versions(int64_t spec_version, vector<Version>* missed_
 // for example:
 //     [0-4][5-5][8-8][9-9]
 // if spec_version = 6, we still return {6, 7} other than {7}
+/*计算tablet中从version=0开始，直到参数spec_version之间所有缺失的version，通过参数missed_versions传回*/
 void Tablet::calc_missed_versions_unlocked(int64_t spec_version, vector<Version>* missed_versions) const {
     DCHECK(spec_version > 0) << "invalid spec_version: " << spec_version;
     std::list<Version> existing_versions;
-    for (auto& rs : _tablet_meta->all_rs_metas()) {
+    for (auto& rs : _tablet_meta->all_rs_metas()) { //获取当前tablet中所有的rowset
         existing_versions.emplace_back(rs->version());
     }
 
     // sort the existing versions in ascending order
-    existing_versions.sort([](const Version& a, const Version& b) {
+    existing_versions.sort([](const Version& a, const Version& b) { //对tablet中所有的rowset进行升序排列
         // simple because 2 versions are certainly not overlapping
         return a.first < b.first;
     });
 
     // From the first version(=0),  find the missing version until spec_version
-    int64_t last_version = -1;
-    for (const Version& version : existing_versions) {
-        if (version.first > last_version + 1) {
+    int64_t last_version = -1; //初始化last_version为-1
+    for (const Version& version : existing_versions) { //依次遍历所有的rowset，获取缺失的版本
+        if (version.first > last_version + 1) { //如果某一个rowset的version.first大于前一个rowset的version.second+1，则任务当前rowset与前一个rowset之间存在版本缺失
             for (int64_t i = last_version + 1; i < version.first; ++i) {
                 missed_versions->emplace_back(Version(i, i));
             }
         }
-        last_version = version.second;
-        if (last_version >= spec_version) {
+        last_version = version.second; //更新last_version为当前rowset的version.second
+        if (last_version >= spec_version) { //如果遍历到spec_version，则停止
             break;
         }
     }
-    for (int64_t i = last_version + 1; i <= spec_version; ++i) {
+    for (int64_t i = last_version + 1; i <= spec_version; ++i) { //如果tablet中最大版本的rowset小于spec_version，则最大版本的rowset与spec_version之间的rowset都是缺失版本
         missed_versions->emplace_back(Version(i, i));
     }
 }

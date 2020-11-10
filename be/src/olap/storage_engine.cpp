@@ -921,7 +921,7 @@ OLAPStatus StorageEngine::recover_tablet_until_specfic_version(const TRecoverTab
     return OLAP_SUCCESS;
 }
 
-/*获取shard路径*/
+/*根据指定的存储介质类型，获取一个磁盘和shard路径*/
 OLAPStatus StorageEngine::obtain_shard_path(TStorageMedium::type storage_medium, std::string* shard_path, DataDir** store) {
     LOG(INFO) << "begin to process obtain root path. storage_medium=" << storage_medium;
 
