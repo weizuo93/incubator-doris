@@ -158,18 +158,18 @@ cd ${DORIS_HOME}
 
 # Clean and build Backend
 if [ ${BUILD_BE} -eq 1 ] ; then
-    CMAKE_BUILD_TYPE=${BUILD_TYPE:-Release}
+    CMAKE_BUILD_TYPE=${BUILD_TYPE:-Release}           # 设置编译类型，可以为DEBUG、RELEASE、BCC、ASAN、LSAN、UBSAN、TSAN
     echo "Build Backend: ${CMAKE_BUILD_TYPE}"
-    CMAKE_BUILD_DIR=${DORIS_HOME}/be/build_${CMAKE_BUILD_TYPE}
+    CMAKE_BUILD_DIR=${DORIS_HOME}/be/build_${CMAKE_BUILD_TYPE} # 设置编译路径
     if [ ${CLEAN} -eq 1 ]; then
         rm -rf $CMAKE_BUILD_DIR
         rm -rf ${DORIS_HOME}/be/output/
     fi
-    mkdir -p ${CMAKE_BUILD_DIR}
-    cd ${CMAKE_BUILD_DIR}
-    ${CMAKE_CMD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DMAKE_TEST=OFF -DWITH_MYSQL=${WITH_MYSQL} -DWITH_LZO=${WITH_LZO} ../
-    make -j${PARALLEL}
-    make install
+    mkdir -p ${CMAKE_BUILD_DIR}                        # 创建编译路径
+    cd ${CMAKE_BUILD_DIR}                              # 进入编译目录
+    ${CMAKE_CMD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DMAKE_TEST=OFF -DWITH_MYSQL=${WITH_MYSQL} -DWITH_LZO=${WITH_LZO} ../ # 使用cmake工具，根据上一层目录中的CMakeLists.txt文件生成Makefile文件
+    make -j${PARALLEL} # 根据camke生成的Makefile文件执行编译，参数“-j”用来设置编译的并行度
+    make install       # 将编译好的可执行文件安装到camke生成的Makefile文件中指定的路径
     cd ${DORIS_HOME}
 fi
 

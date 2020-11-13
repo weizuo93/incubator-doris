@@ -124,9 +124,9 @@ void TaskWorkerPool::start() {
         _worker_count = config::alter_tablet_worker_count;
         _callback_function = _alter_tablet_worker_thread_callback;
         break;
-    case TaskWorkerType::CLONE:
-        _worker_count = config::clone_worker_count;
-        _callback_function = _clone_worker_thread_callback;
+    case TaskWorkerType::CLONE:                                 // 启动的worker类型为clone
+        _worker_count = config::clone_worker_count;             // 通过config文件获取clone worker的数目
+        _callback_function = _clone_worker_thread_callback;     // 获取clone线程的回调函数
         break;
     case TaskWorkerType::STORAGE_MEDIUM_MIGRATE:
         _worker_count = config::storage_medium_migrate_count;

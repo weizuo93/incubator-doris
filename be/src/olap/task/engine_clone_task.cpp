@@ -566,6 +566,7 @@ Status EngineCloneTask::_download_files(
     return Status::OK();
 }
 
+/*将clone的snapshot转换为tablet meta pb*/
 OLAPStatus EngineCloneTask::_convert_to_new_snapshot(const string& clone_dir, int64_t tablet_id) {
     OLAPStatus res = OLAP_SUCCESS;
     // check clone dir existed
@@ -576,17 +577,17 @@ OLAPStatus EngineCloneTask::_convert_to_new_snapshot(const string& clone_dir, in
     }
 
     // load src header
-    string cloned_meta_file = clone_dir + "/" + std::to_string(tablet_id) + ".hdr";
+    string cloned_meta_file = clone_dir + "/" + std::to_string(tablet_id) + ".hdr"; //获取clone到本地的tablet header文件
     FileHeader<OLAPHeaderMessage> file_header;
     FileHandler file_handler;
     OLAPHeaderMessage olap_header_msg;
-    if (file_handler.open(cloned_meta_file.c_str(), O_RDONLY) != OLAP_SUCCESS) {
+    if (file_handler.open(cloned_meta_file.c_str(), O_RDONLY) != OLAP_SUCCESS) { //打开clone到本地的tablet header文件，获取文件句柄
         LOG(WARNING) << "fail to open ordinal file. file=" << cloned_meta_file;
         return OLAP_ERR_IO_ERROR;
     }
 
     // In file_header.unserialize(), it validates file length, signature, checksum of protobuf.
-    if (file_header.unserialize(&file_handler) != OLAP_SUCCESS) {
+    if (file_header.unserialize(&file_handler) != OLAP_SUCCESS) { //反序列化 tablet header文件，其中会验证文件长度、签名和checksum
         LOG(WARNING) << "fail to unserialize tablet_meta. file='" << cloned_meta_file;
         return OLAP_ERR_PARSE_PROTOBUF_ERROR;
     }
@@ -594,12 +595,12 @@ OLAPStatus EngineCloneTask::_convert_to_new_snapshot(const string& clone_dir, in
     set<string> clone_files;
 
     RETURN_WITH_WARN_IF_ERROR(
-            FileUtils::list_dirs_files(clone_dir, NULL, &clone_files, Env::Default()),
+            FileUtils::list_dirs_files(clone_dir, NULL, &clone_files, Env::Default()), //获取clone到本地的所有文件，保存在clone_files中
             OLAP_ERR_DISK_FAILURE,
             "failed to dir walk when clone. clone_dir=" + clone_dir);
 
     try {
-       olap_header_msg.CopyFrom(file_header.message());
+       olap_header_msg.CopyFrom(file_header.message()); //复制olap header
     } catch (...) {
         LOG(WARNING) << "fail to copy protocol buffer object. file='" << cloned_meta_file;
         return OLAP_ERR_PARSE_PROTOBUF_ERROR;
@@ -608,21 +609,21 @@ OLAPStatus EngineCloneTask::_convert_to_new_snapshot(const string& clone_dir, in
     TabletMetaPB tablet_meta_pb;
     vector<RowsetMetaPB> pending_rowsets;
     res = converter.to_new_snapshot(olap_header_msg, clone_dir, clone_dir,
-                                    &tablet_meta_pb, &pending_rowsets, false);
+                                    &tablet_meta_pb, &pending_rowsets, false); //将olap header转化为tablet meta pb
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "fail to convert snapshot to new format. dir='" << clone_dir;
         return res;
     }
     vector<string> files_to_delete;
-    for (auto file_name : clone_files) {
+    for (auto file_name : clone_files) { //依次将所有clone的文件名添加到files_to_delete
         string full_file_path = clone_dir + "/" + file_name;
         files_to_delete.push_back(full_file_path);
     }
     // remove all files
-    RETURN_WITH_WARN_IF_ERROR(FileUtils::remove_paths(files_to_delete), OLAP_ERR_IO_ERROR,
+    RETURN_WITH_WARN_IF_ERROR(FileUtils::remove_paths(files_to_delete), OLAP_ERR_IO_ERROR, //删除所有clone的文件
             "remove paths failed.")
 
-    res = TabletMeta::save(cloned_meta_file, tablet_meta_pb);
+    res = TabletMeta::save(cloned_meta_file, tablet_meta_pb); //将clone的tablet meta保存到pb文件
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "fail to save converted tablet meta to dir='" << clone_dir;
         return res;

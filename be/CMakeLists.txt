@@ -15,25 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
-cmake_minimum_required(VERSION 2.8.10)
+cmake_minimum_required(VERSION 2.8.10) # 设置编译工程的最低cmake版本，VERSION不能小写（该命令必须放在根目录的CMakeLists.txt文件的第一行，也就是PROJECT()之前），可以通过“cmake --version”命令查看系统中cmake的版本。
 
 # set CMAKE_C_COMPILER, this must set before project command
-if (DEFINED ENV{DORIS_GCC_HOME})
-    set(CMAKE_C_COMPILER "$ENV{DORIS_GCC_HOME}/bin/gcc")
+if (DEFINED ENV{DORIS_GCC_HOME})       # 判断环境变量DORIS_GCC_HOME是否已经定义过了。cmake通过“ENV{}”表示环境变量，读取环境变量值时要在ENV前加$符号，而写环境变量和if判断环境变量是否定义时ENV{}指代变量名，不用加“$”符号。
+    set(CMAKE_C_COMPILER "$ENV{DORIS_GCC_HOME}/bin/gcc") # set命令用来显式地定义变量，第一个参数为变量，后面的item为变量的值,以后就可以使用变量代替后面的item了。
     set(CMAKE_CXX_COMPILER "$ENV{DORIS_GCC_HOME}/bin/g++")
     set(GCC_HOME $ENV{DORIS_GCC_HOME})
 else()
-    message(FATAL_ERROR "DORIS_GCC_HOME environment variable is not set")
+    message(FATAL_ERROR "DORIS_GCC_HOME environment variable is not set") # message([STATUS|WARNING|AUTHOR_WARNING|FATAL_ERROR|SEND_ERROR] "...")函数用于打印一条消息，可以通过关键字指定消息类型
 endif()
 
-project(doris CXX C)
+project(doris CXX C)                    # 设置项目名称
 
 # set CMAKE_BUILD_TYPE
-if (NOT CMAKE_BUILD_TYPE)
+if (NOT CMAKE_BUILD_TYPE)               # 判断变量是否已经定义过了，与 if(DEFINED )效果相同
     set(CMAKE_BUILD_TYPE RELEASE)
 endif()
 
-string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
+string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE) # string(TOUPPER <string> <output variable>)用于将字符串<string>转换为大写字母保存在输出变量<output variable>中
 message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
 
 # set CMAKE_BUILD_TARGET_ARCH
@@ -41,30 +41,30 @@ message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
 execute_process(COMMAND bash "-c" "uname -m"
                 OUTPUT_VARIABLE
                 CMAKE_BUILD_TARGET_ARCH
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
+                OUTPUT_STRIP_TRAILING_WHITESPACE) # execute_process()函数用于执行系统命令，将输出保存到cmake变量或文件中
 message(STATUS "Build target arch is ${CMAKE_BUILD_TARGET_ARCH}")
 
 # Set dirs
-set(BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set(ENV{DORIS_HOME} "${BASE_DIR}/../")
-set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-set(THIRDPARTY_DIR "$ENV{DORIS_THIRDPARTY}/installed/")
+set(BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")  # CMAKE_CURRENT_SOURCE_DIR为cmake的内置变量，表示CMakeList.txt所在的目录
+set(ENV{DORIS_HOME} "${BASE_DIR}/../")       # cmake中set(ENV{} ...)用于为定义环境变量，并为其赋值
+set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}") # CMAKE_CURRENT_BINARY_DIR为cmake的内置变量，外部编译时指的是target目录，内部编译时指的是顶级目录
+set(THIRDPARTY_DIR "$ENV{DORIS_THIRDPARTY}/installed/") # 读取环境变量值时要在ENV前加$符号，而写环境变量和if判断环境变量是否定义时ENV{}指代变量名，不用加“$”符号。
 set(GENSRC_DIR "${BASE_DIR}/../gensrc/build/")
 set(SRC_DIR "${BASE_DIR}/src/")
-set(TEST_DIR "${CMAKE_SOURCE_DIR}/test/")
+set(TEST_DIR "${CMAKE_SOURCE_DIR}/test/")    # CMAKE_SOURCE_DIR为cmake的内置变量，表示工程的顶级目录
 set(OUTPUT_DIR "${BASE_DIR}/output")
 
 if (APPLE)
     set(MAKE_TEST "ON")
 else()
-    option(MAKE_TEST "ON for make unit test or OFF for not" OFF)
+    option(MAKE_TEST "ON for make unit test or OFF for not" OFF) # option(<variable> "<help_text>" [value])函数用于给变量设置默认值，如果变量已经被显式定义并赋值，则该函数什么都不做。
 endif()
 message(STATUS "make test: ${MAKE_TEST}")
-option(WITH_MYSQL "Support access MySQL" ON)
+option(WITH_MYSQL "Support access MySQL" ON)                     # option()函数只能针对值为ON或OFF的开关量
 
 # Check gcc
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8.2")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")    # 判断编译器是否为GNU（STREQUAL用于判断字符串是否相等）
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8.2") # 判断GCC的版本
         message(FATAL_ERROR "Need GCC version at least 4.8.2")
     endif()
 
@@ -111,18 +111,18 @@ set(Boost_USE_MULTITHREADED ON)
 set(BOOST_ROOT ${THIRDPARTY_DIR})
 
 if (NOT APPLE)
-    find_package(Boost 1.55.0 REQUIRED COMPONENTS thread regex filesystem system date_time program_options)
+    find_package(Boost 1.55.0 REQUIRED COMPONENTS thread regex filesystem system date_time program_options) # find_package函数用于查找依赖库。REQUIRED关键字表示一定要找到包，找不到的话cmake就失败，如果不指定REQUIRED，找不到包cmake还会继续执行。
 else()
-    find_package(Boost 1.55.0 COMPONENTS thread regex filesystem system date_time program_options)
+    find_package(Boost 1.55.0 COMPONENTS thread regex filesystem system date_time program_options) # COMPONENTS关键字表示查找的包中必须要找到的组件，如果有任何一个组件找不到cmake就失败
 endif()
-include_directories(${Boost_INCLUDE_DIRS})
+include_directories(${Boost_INCLUDE_DIRS}) # 将路径Boost_INCLUDE_DIRS添加到当前CMakeLists及其子CMakeLists的头文件包含路径中
 message(STATUS ${Boost_LIBRARIES})
 
 set(GPERFTOOLS_HOME "${THIRDPARTY_DIR}/gperftools")
 
 # Set all libraries
-add_library(gflags STATIC IMPORTED)
-set_target_properties(gflags PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libgflags.a)
+add_library(gflags STATIC IMPORTED) # 导入已有的库到工程中，STATIC代表静态链接库，编译的时候link到工程中。
+set_target_properties(gflags PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libgflags.a) # 指定导入库的路径
 
 add_library(glog STATIC IMPORTED)
 set_target_properties(glog PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libglog.a)
@@ -238,14 +238,14 @@ set_target_properties(orc PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/lib
 add_library(cctz STATIC IMPORTED)
 set_target_properties(cctz PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libcctz.a)
 
-find_program(THRIFT_COMPILER thrift ${CMAKE_SOURCE_DIR}/bin)
+find_program(THRIFT_COMPILER thrift ${CMAKE_SOURCE_DIR}/bin) # find_program(<VAR> name1 [path1 path2 ...])用于查找可执行程序，一个名为<VAR>的cache条目会被创建用来存储该命令的结果。
 
 # Check if functions are supported in this platform. All flags will generated
 # in gensrc/build/common/env_config.h.
 # You can check funcion here which depends on platform. Don't forget add this
 # to be/src/common/env_config.h.in
-include(CheckFunctionExists)
-check_function_exists(sched_getcpu HAVE_SCHED_GETCPU)
+include(CheckFunctionExists) # 添加CheckFunctionExists模块，通常位于/usr/share/cmake-2.4/Modules/CheckFunctionExists.cmake (include指令用来载入并运行来自于文件或模块的CMake代码)
+check_function_exists(sched_getcpu HAVE_SCHED_GETCPU) # check_function_exists命令用于测试链接器是否能够在链接阶段找到sched_getcpu函数
 
 # compiler flags that are common across debug/release builds
 #  -Wall: Enable all warnings.
@@ -300,7 +300,7 @@ set(CXX_FLAGS_DEBUG "${CXX_GCC_FLAGS} -Werror -ggdb -O0 -gdwarf-2")
 #   -gdwarf-2: Debug information is stored as dwarf2 to be as compatible as possible
 set(CXX_FLAGS_RELEASE "${CXX_GCC_FLAGS} -O3 -gdwarf-2 -DNDEBUG")
 
-SET(CXX_FLAGS_ASAN "${CXX_GCC_FLAGS} -ggdb3 -O0 -gdwarf-2 -fsanitize=address -DADDRESS_SANITIZER")
+SET(CXX_FLAGS_ASAN "${CXX_GCC_FLAGS} -ggdb3 -O0 -gdwarf-2 -fsanitize=address -DADDRESS_SANITIZER") # cmake命令不区分大小写，set()和SET()作用相同
 SET(CXX_FLAGS_LSAN "${CXX_GCC_FLAGS} -ggdb3 -O0 -gdwarf-2 -fsanitize=leak -DLEAK_SANITIZER")
 
 # Set the flags to the undefined behavior sanitizer, also known as "ubsan"
@@ -317,17 +317,17 @@ SET(CXX_FLAGS_TSAN "${CXX_GCC_FLAGS} -O0 -ggdb3 -fsanitize=thread -DTHREAD_SANIT
 
 # Set compile flags based on the build type.
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG")
-    SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_DEBUG})
+    SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_DEBUG})    # 编译类型为DEBUG
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE" OR "${CMAKE_BUILD_TYPE}" STREQUAL "BCC")
-    SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_RELEASE})
+    SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_RELEASE})  # 编译类型为RELEASE或BCC
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "ASAN")
-    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_ASAN}")
+    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_ASAN}")   # 编译类型为ASAN
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "LSAN")
-    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_LSAN}")
+    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_LSAN}")   # 编译类型为LSAN
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "UBSAN")
-    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_UBSAN}")
+    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_UBSAN}")  # 编译类型为UBSAN
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "TSAN")
-    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_TSAN}")
+    SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_TSAN}")   # 编译类型为TSAN
 else()
     message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif()
@@ -335,10 +335,10 @@ endif()
 # Add flags that are common across build types
 SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 
-message(STATUS "Compiler Flags: ${CMAKE_CXX_FLAGS}")
+message(STATUS "Compiler Flags: ${CMAKE_CXX_FLAGS}")  # 输出编译选项
 
 # Thrift requires these two definitions for some types that we use
-add_definitions(-DHAVE_INTTYPES_H -DHAVE_NETINET_IN_H)
+add_definitions(-DHAVE_INTTYPES_H -DHAVE_NETINET_IN_H)          # 为源文件的编译添加由-D定义的标志
 
 # Set include dirs
 include_directories(
@@ -355,7 +355,7 @@ set(WL_START_GROUP "-Wl,--start-group")
 set(WL_END_GROUP "-Wl,--end-group")
 
 # Set Palo libraries
-set(DORIS_LINK_LIBS
+set(DORIS_LINK_LIBS    # 设置Doris内部链接库
     ${WL_START_GROUP}
     Agent
     Common
@@ -380,7 +380,7 @@ set(DORIS_LINK_LIBS
 )
 
 # Set thirdparty libraries
-set(DORIS_DEPENDENCIES
+set(DORIS_DEPENDENCIES     # 设置第三方依赖库
     ${DORIS_DEPENDENCIES}
     ${WL_START_GROUP}
     rocksdb
@@ -434,7 +434,7 @@ endif()
 
 # Add all external dependencies. They should come after the palo libs.
 # static link gcc's lib
-set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
+set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS} # 添加链接库，包括内部依赖库和第三方库
     ${DORIS_DEPENDENCIES}
     -static-libstdc++
     -static-libgcc
@@ -448,7 +448,7 @@ endif()
 
 # Add sanitize static link flags or tcmalloc
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG" OR "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE" OR "${CMAKE_BUILD_TYPE}" STREQUAL "BCC")
-    set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS} tcmalloc)
+    set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS} tcmalloc) # 根据编译方式不同，添加不同的链接库
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "ASAN")
     set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS} -static-libasan)
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "LSAN")
@@ -461,12 +461,12 @@ else()
     message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
-set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
+set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS} # 添加链接库
     -lrt -lbfd -liberty -lc -lm -ldl -pthread
 )
 
 # Set libraries for test
-set (TEST_LINK_LIBS ${DORIS_LINK_LIBS}
+set (TEST_LINK_LIBS ${DORIS_LINK_LIBS} # 添加测试链接库
     ${WL_START_GROUP}
     gmock
     gtest
@@ -482,7 +482,7 @@ if (${MAKE_TEST} STREQUAL "ON")
     add_definitions(-DBE_TEST)
 endif ()
 
-add_subdirectory(${SRC_DIR}/agent)
+add_subdirectory(${SRC_DIR}/agent)   # add_subdirectory()函数用于添加项目中的子目录
 add_subdirectory(${SRC_DIR}/common)
 add_subdirectory(${SRC_DIR}/env)
 add_subdirectory(${SRC_DIR}/exec)
@@ -518,7 +518,7 @@ FUNCTION(ADD_BE_TEST TEST_NAME)
     ADD_TEST(${TEST_FILE_NAME} "${BUILD_OUTPUT_ROOT_DIRECTORY}/${TEST_NAME}")
 ENDFUNCTION()
 
-FUNCTION(ADD_BE_PLUGIN PLUGIN_NAME)
+FUNCTION(ADD_BE_PLUGIN PLUGIN_NAME)         # function(<name>[arg1 [arg2 [arg3 ...]]])定义一个名为<name>，参数为arg1 arg2 arg3(…)的函数。
     set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/")
 
     get_filename_component(DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
@@ -553,7 +553,7 @@ if (${MAKE_TEST} STREQUAL "ON")
 endif ()
 
 # Install be
-install(DIRECTORY DESTINATION ${OUTPUT_DIR})
+install(DIRECTORY DESTINATION ${OUTPUT_DIR})      # install()定义在编译结束安装时要运行的规则。DIRECTORY选项表示安装整个目录，FILES表示安装文件，DESTINATION选项指定了安装路径。
 install(DIRECTORY DESTINATION ${OUTPUT_DIR}/bin)
 install(DIRECTORY DESTINATION ${OUTPUT_DIR}/conf)
 
