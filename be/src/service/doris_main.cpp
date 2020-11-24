@@ -184,29 +184,29 @@ int main(int argc, char** argv) {
     options.store_paths = paths;
     options.backend_uid = doris::UniqueId::gen_uid();
     doris::StorageEngine* engine = nullptr;
-    auto st = doris::StorageEngine::open(options, &engine);
+    auto st = doris::StorageEngine::open(options, &engine); //创建并打开StorageEngine对象
     if (!st.ok()) {
         LOG(FATAL) << "fail to open StorageEngine, res=" << st.get_error_msg();
         exit(-1);
     }
 
     // init exec env
-    auto exec_env = doris::ExecEnv::GetInstance();
-    doris::ExecEnv::init(exec_env, paths);
-    exec_env->set_storage_engine(engine);
+    auto exec_env = doris::ExecEnv::GetInstance(); // 获取ExecEnv对象
+    doris::ExecEnv::init(exec_env, paths);         // 初始化ExecEnv对象
+    exec_env->set_storage_engine(engine);          // 为执行环境设置存储引擎
     engine->set_heartbeat_flags(exec_env->heartbeat_flags());
 
     // start all backgroud threads of storage engine.
     // SHOULD be called after exec env is initialized.
-    EXIT_IF_ERROR(engine->start_bg_threads());
+    EXIT_IF_ERROR(engine->start_bg_threads()); // 启动StorageEngine的后台线程
 
     // begin to start services
     doris::ThriftRpcHelper::setup(exec_env);
     // 1. thrift server with be_port
     doris::ThriftServer* be_server = nullptr;
     EXIT_IF_ERROR(
-            doris::BackendService::create_service(exec_env, doris::config::be_port, &be_server));
-    Status status = be_server->start();
+            doris::BackendService::create_service(exec_env, doris::config::be_port, &be_server)); // 通过BackendService创建ThriftServer对象
+    Status status = be_server->start();                       // 启动 Thrift service
     if (!status.ok()) {
         LOG(ERROR) << "Doris Be server did not start correctly, exiting";
         doris::shutdown_logging();
@@ -214,8 +214,8 @@ int main(int argc, char** argv) {
     }
 
     // 2. bprc service
-    doris::BRpcService brpc_service(exec_env);
-    status = brpc_service.start(doris::config::brpc_port);
+    doris::BRpcService brpc_service(exec_env);  // 创建BRpcService对象
+    status = brpc_service.start(doris::config::brpc_port); // 启动 BRPC service
     if (!status.ok()) {
         LOG(ERROR) << "BRPC service did not start correctly, exiting";
         doris::shutdown_logging();
@@ -223,9 +223,9 @@ int main(int argc, char** argv) {
     }
 
     // 3. http service
-    doris::HttpService http_service(exec_env, doris::config::webserver_port,
+    doris::HttpService http_service(exec_env, doris::config::webserver_port, // 创建HttpService对象
                                     doris::config::webserver_num_workers);
-    status = http_service.start();
+    status = http_service.start();  // 启动 http service
     if (!status.ok()) {
         LOG(ERROR) << "Doris Be http service did not start correctly, exiting";
         doris::shutdown_logging();
@@ -235,17 +235,17 @@ int main(int argc, char** argv) {
     // 4. heart beat server
     doris::TMasterInfo* master_info = exec_env->master_info();
     doris::ThriftServer* heartbeat_thrift_server;
-    doris::AgentStatus heartbeat_status = doris::create_heartbeat_server(
+    doris::AgentStatus heartbeat_status = doris::create_heartbeat_server(             // 创建heart beat的ThriftServer对象
             exec_env, doris::config::heartbeat_service_port, &heartbeat_thrift_server,
             doris::config::heartbeat_service_thread_count, master_info);
 
-    if (doris::AgentStatus::DORIS_SUCCESS != heartbeat_status) {
+    if (doris::AgentStatus::DORIS_SUCCESS != heartbeat_status) {             // 判断heart beat的ThriftServer对象是否创建成功
         LOG(ERROR) << "Heartbeat services did not start correctly, exiting";
         doris::shutdown_logging();
         exit(1);
     }
 
-    status = heartbeat_thrift_server->start();
+    status = heartbeat_thrift_server->start(); //启动 heartbeat service
     if (!status.ok()) {
         LOG(ERROR) << "Doris BE HeartBeat Service did not start correctly, exiting";
         doris::shutdown_logging();

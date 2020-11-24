@@ -897,8 +897,8 @@ void* TaskWorkerPool::_clone_worker_thread_callback(void* arg_this) {
         vector<string> error_msgs;
         vector<TTabletInfo> tablet_infos;
         EngineCloneTask engine_task(clone_req, worker_pool_this->_master_info,
-                                    agent_task_req.signature, &error_msgs, &tablet_infos, &status);
-        worker_pool_this->_env->storage_engine()->execute_task(&engine_task);
+                                    agent_task_req.signature, &error_msgs, &tablet_infos, &status); //创建EngineCloneTask对象
+        worker_pool_this->_env->storage_engine()->execute_task(&engine_task); //执行clone任务
         // Return result to fe
         TStatus task_status;
         TFinishTaskRequest finish_task_request;

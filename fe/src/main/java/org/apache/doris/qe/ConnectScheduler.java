@@ -88,7 +88,7 @@ public class ConnectScheduler {
         if(context instanceof NConnectContext){
             return true;
         }
-        if (executor.submit(new LoopHandler(context)) == null) {
+        if (executor.submit(new LoopHandler(context)) == null) { // 提交一个任务到线程池，该任务对应的线程用于为一个query请求服务
             LOG.warn("Submit one thread failed.");
             return false;
         }

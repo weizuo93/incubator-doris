@@ -393,9 +393,9 @@ public class Coordinator {
         // prepare information
         prepare();
         // compute Fragment Instance
-        computeScanRangeAssignment();
+        computeScanRangeAssignment(); // 确定每个tablet扫描哪个副本
 
-        computeFragmentExecParams();
+        computeFragmentExecParams();  // 根据并发度生成fragment实例，确定data sink的目的地址
 
         traceInstance();
 
@@ -404,7 +404,7 @@ public class Coordinator {
         FragmentExecParams topParams = fragmentExecParamsMap.get(topId);
         if (topParams.fragment.getSink() instanceof ResultSink) {
             TNetworkAddress execBeAddr = topParams.instanceExecParams.get(0).host;
-            receiver = new ResultReceiver(
+            receiver = new ResultReceiver(                             // 创建最终数据汇聚点
                     topParams.instanceExecParams.get(0).instanceId,
                     addressToBackendID.get(execBeAddr),
                     toBrpcHost(execBeAddr),
@@ -445,7 +445,7 @@ public class Coordinator {
             int backendId = 0;
             int profileFragmentId = 0;
             long memoryLimit = queryOptions.getMem_limit();
-            for (PlanFragment fragment : fragments) {
+            for (PlanFragment fragment : fragments) { // 依次遍历每一个fragment，将fragment下发到具体BE节点执行所有的instance
                 FragmentExecParams params = fragmentExecParamsMap.get(fragment.getFragmentId());
                 
                 // set up exec states

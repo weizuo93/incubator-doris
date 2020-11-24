@@ -60,7 +60,7 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info) :
                 TaskWorkerPool::TaskWorkerType::type,  \
                 _exec_env,                             \
                 master_info));                         \
-    pool_name->start();
+    pool_name->start();                 // 执行TaskWorkerPool::start()
 #else
 #define CREATE_AND_START_POOL(type, pool_name)
 #endif // BE_TEST
@@ -73,7 +73,7 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info) :
     CREATE_AND_START_POOL(CLEAR_TRANSACTION_TASK, _clear_transaction_task_workers);
     CREATE_AND_START_POOL(DELETE, _delete_workers);
     CREATE_AND_START_POOL(ALTER_TABLE, _alter_tablet_workers);
-    CREATE_AND_START_POOL(CLONE, _clone_workers);
+    CREATE_AND_START_POOL(CLONE, _clone_workers);                                    // 创建并启动clone任务池
     CREATE_AND_START_POOL(STORAGE_MEDIUM_MIGRATE, _storage_medium_migrate_workers);
     CREATE_AND_START_POOL(CHECK_CONSISTENCY, _check_consistency_workers);
     CREATE_AND_START_POOL(REPORT_TASK, _report_task_workers);

@@ -84,7 +84,7 @@ Status BackendService::create_service(ExecEnv* exec_env, int port, ThriftServer*
 
     boost::shared_ptr<TProcessor> be_processor(new BackendServiceProcessor(handler));
 
-    *server = new ThriftServer("backend",
+    *server = new ThriftServer("backend",                     // 创建ThriftServer对象
                                be_processor,
                                port,
                                exec_env->metrics(),
