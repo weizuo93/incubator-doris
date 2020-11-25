@@ -194,7 +194,7 @@ Status OlapScanner::_init_params(
     }
 
     // use _params.return_columns, because reader use this to merge sort
-    OLAPStatus res = _read_row_cursor.init(_tablet->tablet_schema(), _params.return_columns);
+    OLAPStatus res = _read_row_cursor.init(_tablet->tablet_schema(), _params.return_columns); //根据tablet schema和返回的列数初始化_read_row_cursor
     if (res != OLAP_SUCCESS) {
         OLAP_LOG_WARNING("fail to init row cursor.[res=%d]", res);
         return Status::InternalError("failed to initialize storage read row cursor");
@@ -235,6 +235,7 @@ Status OlapScanner::_init_return_columns() {
     return Status::OK();
 }
 
+/*读取一个batch的数据*/
 Status OlapScanner::get_batch(
         RuntimeState* state, RowBatch* batch, bool* eof) {
     // 2. Allocate Row's Tuple buf
@@ -263,7 +264,7 @@ Status OlapScanner::get_batch(
                 return Status::InternalError(ss.str());
             }
             // If we reach end of this scanner, break
-            if (UNLIKELY(*eof)) {
+            if (UNLIKELY(*eof)) {         // 读到结尾
                 break;
             }
 
@@ -470,7 +471,7 @@ void OlapScanner::update_counter() {
 
     COUNTER_UPDATE(_parent->_stats_filtered_counter, _reader->stats().rows_stats_filtered);
     COUNTER_UPDATE(_parent->_bf_filtered_counter, _reader->stats().rows_bf_filtered);
-    COUNTER_UPDATE(_parent->_del_filtered_counter, _reader->stats().rows_del_filtered);
+    COUNTER_UPDATE(_parent->_del_filtered_counter, _reader->stats().rows_del_filtered);             // 因为被删除而过滤的行数
     COUNTER_UPDATE(_parent->_key_range_filtered_counter, _reader->stats().rows_key_range_filtered);
 
     COUNTER_UPDATE(_parent->_index_load_timer, _reader->stats().index_load_ns);

@@ -51,7 +51,7 @@ class RuntimeState;
 // mainly include tablet, data version and fetch range.
 struct ReaderParams {
     TabletSharedPtr tablet;
-    ReaderType reader_type = READER_QUERY;
+    ReaderType reader_type = READER_QUERY; // reader类型为READER_QUERY
     bool aggregation = false;
     bool need_agg_finalize = true;
     // 1. when read column data page:
@@ -119,14 +119,17 @@ public:
     // Return OLAP_SUCCESS and set `*eof` to false when next row is read into `row_cursor`.
     // Return OLAP_SUCCESS and set `*eof` to true when no more rows can be read.
     // Return others when unexpected error happens.
+    /*读取一行数据。根据tablet key的类型(DUP_KEYS、UNIQUE_KEYS和AGG_KEYS)，选择不同的函数来读取一行数据*/
     OLAPStatus next_row_with_aggregation(RowCursor *row_cursor, MemPool* mem_pool, ObjectPool* agg_pool, bool *eof) {
         return (this->*_next_row_func)(row_cursor, mem_pool, agg_pool, eof);
     }
 
+    /*获取合并的行数（compaction的merge过程中被调用）*/
     uint64_t merged_rows() const {
         return _merged_rows;
     }
 
+    /*获取因为被删除而过滤的行数（compaction的merge过程中被调用）*/
     uint64_t filtered_rows() const {
         return _stats.rows_del_filtered;
     }

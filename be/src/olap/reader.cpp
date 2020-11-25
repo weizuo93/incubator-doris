@@ -74,15 +74,17 @@ public:
     void clear();
 
 private:
-    class ChildCtx {
+    class ChildCtx { // 每一个ChildCtx对象对应一个rowset reader
     public:
+        /*ChildCtx的构造函数*/
         ChildCtx(RowsetReaderSharedPtr rs_reader, Reader* reader)
                 : _rs_reader(rs_reader),
                   _is_delete(rs_reader->delete_flag()),
                   _reader(reader) { }
 
+        /*初始化ChildCtx对象*/
         OLAPStatus init() {
-            auto res = _row_cursor.init(_reader->_tablet->tablet_schema(), _reader->_seek_columns);
+            auto res = _row_cursor.init(_reader->_tablet->tablet_schema(), _reader->_seek_columns); // 根据传入的tablet schema和column id初始化RowCursor
             if (res != OLAP_SUCCESS) {
                 LOG(WARNING) << "failed to init row cursor, res=" << res;
                 return res;
@@ -91,44 +93,54 @@ private:
             return OLAP_SUCCESS;
         }
 
+        /*获取该ChildCtx对象对应rowset的当前行，并通过参数传回该行数据(当前rowset)是否已被删除的信息*/
         const RowCursor* current_row(bool* delete_flag) const {
-            *delete_flag = _is_delete;
+            *delete_flag = _is_delete;  // *delete_flag = _is_delete || _current_row->is_delete(); // 获取当前rowset是否被删除的标志或当前行是否被删除
             return _current_row;
         }
 
+        /*获取该ChildCtx对象对应rowset的当前行*/
         const RowCursor* current_row() const {
             return _current_row;
         }
 
+        /*获取该ChildCtx对象对应rowset的version*/
         int32_t version() const {
             return _rs_reader->version().second;
         }
 
+        /*从该ChildCtx对象对应rowset中获取一行数据，通过参数传回，同时通过参数传回该行是否被删除的标志*/
         OLAPStatus next(const RowCursor** row, bool* delete_flag) {
-            _row_block->pos_inc();
-            auto res = _refresh_current_row();
-            *row = _current_row;
-            *delete_flag = _is_delete;
+            _row_block->pos_inc(); // 将RowBlock中当前行的位置_pos后移一位
+            auto res = _refresh_current_row(); // 更新当前行的位置，更新后的当前行保存在成员变量_current_row中
+            *row = _current_row;               // 获取当前行的位置
+            *delete_flag = _is_delete;         // 获取当前rowset是否被删除的标志
+            /*
+            if (_current_row!= nullptr) {
+                delete_flag = _is_delete || _current_row->is_delete(); // 获取当前rowset是否被删除的标志或当前行是否被删除。当前行是否被删除可以通过该行schema的隐藏列_delete_sign_idx判断。
+            };
+             * */
             return res;
         }
 
     private:
         // refresh_current_row
+        /*更新当前行的位置*/
         OLAPStatus _refresh_current_row() {
             do {
-                if (_row_block != nullptr && _row_block->has_remaining()) {
-                    size_t pos = _row_block->pos();
-                    _row_block->get_row(pos, &_row_cursor);
+                if (_row_block != nullptr && _row_block->has_remaining()) { // 如果当前RowBlock不为空，并且当前行位置还未达到RowBlock内部buf的上限（RowBlock中有一个成员变量_pos来记录当前行的位置）
+                    size_t pos = _row_block->pos();         // 获取RowBlock中当前行的位置_pos
+                    _row_block->get_row(pos, &_row_cursor); // 将_row_cursor attach到RowBlock中pos位置，即从RowBlock中获取一行数据
                     if (_row_block->block_status() == DEL_PARTIAL_SATISFIED &&
                         _reader->_delete_handler.is_filter_data(_rs_reader->version().second, _row_cursor)) {
                         _reader->_stats.rows_del_filtered++;
-                        _row_block->pos_inc();
+                        _row_block->pos_inc(); // RowBlock中当前行的位置_pos后移一位
                         continue;
                     }
-                    _current_row = &_row_cursor;
+                    _current_row = &_row_cursor; // 获取一行数据，保存在成员变量_current_row中
                     return OLAP_SUCCESS;
-                } else {
-                    auto res = _rs_reader->next_block(&_row_block);
+                } else {                                                     // 如果当前RowBlock为空，或当前行位置达到了RowBlock的内部buf的上限
+                    auto res = _rs_reader->next_block(&_row_block); // 获取下一个RowBlock，通过参数传回
                     if (res != OLAP_SUCCESS) {
                         _current_row = nullptr;
                         return res;
@@ -140,17 +152,17 @@ private:
         }
 
         RowsetReaderSharedPtr _rs_reader;
-        const RowCursor* _current_row = nullptr;
+        const RowCursor* _current_row = nullptr; //保存ChildCtx对象对应rowset的当前行
         bool _is_delete = false;
         Reader* _reader = nullptr;
 
         RowCursor _row_cursor; // point to rows inside `_row_block`
-        RowBlock* _row_block = nullptr;
+        RowBlock* _row_block = nullptr; // 一般由256或512行组成一个RowBlock，数据保存在RowBlock的内部buf中。因此，读数据时每个rowset reader会在内存中开辟一块儿特定大小的内存空间。
     };
 
     // Compare row cursors between multiple merge elements,
     // if row cursors equal, compare data version.
-    class ChildCtxComparator {
+    class ChildCtxComparator { // 比较多个merge元素之间的row cursors，如果相等则比较数据版本
     public:
         ChildCtxComparator(const bool& revparam=false) {
             _reverse = revparam;
@@ -164,20 +176,20 @@ private:
     inline OLAPStatus _normal_next(const RowCursor** row, bool* delete_flag);
 
     // each ChildCtx corresponds to a rowset reader
-    std::vector<ChildCtx*> _children;
+    std::vector<ChildCtx*> _children;                       // 每一个ChildCtx对应一个rowset reader
     // point to the ChildCtx containing the next output row.
     // null when CollectIterator hasn't been initialized or reaches EOF.
-    ChildCtx* _cur_child = nullptr;
+    ChildCtx* _cur_child = nullptr; //始终指向下一行所对应的ChildCtx对象，即下一行所对应的rowset reader
 
     // when `_merge == true`, rowset reader returns ordered rows and CollectIterator uses a priority queue to merge
     // sort them. The output of CollectIterator is also ordered.
     // When `_merge == false`, rowset reader returns *partial* ordered rows. CollectIterator simply returns all rows
     // from the first rowset, the second rowset, .., the last rowset. The output of CollectorIterator is also
     // *partially* ordered.
-    bool _merge = true;
+    bool _merge = true; // _merge为true时，会对读到的所有rowset的数据进行排序、合并之后返回；_merge为false时，按rowset顺序返回每一个rowset的数据，返回数据局部有序
     // used when `_merge == true`
-    typedef std::priority_queue<ChildCtx*, std::vector<ChildCtx*>, ChildCtxComparator> MergeHeap;
-    std::unique_ptr<MergeHeap> _heap;
+    typedef std::priority_queue<ChildCtx*, std::vector<ChildCtx*>, ChildCtxComparator> MergeHeap; // priority_queue可以自定义其中数据的优先级,让优先级高的排在队列前面,优先出队，本质上是一个堆
+    std::unique_ptr<MergeHeap> _heap; //定义执行compaction时的merge堆类型，每一个rowset reader是一个堆元素
     // used when `_merge == false`
     int _child_idx = 0;
 
@@ -185,13 +197,14 @@ private:
     Reader* _reader = nullptr;
 };
 
-
+/*CollectIterator的析构函数，依次释放每一个ChildCtx对象*/
 CollectIterator::~CollectIterator() {
     for (auto child : _children) {
         delete child;
     }
 }
 
+/*初始化CollectIterator对象*/
 void CollectIterator::init(Reader* reader) {
     _reader = reader;
     // when aggregate is enabled or key_type is DUP_KEYS, we don't merge
@@ -199,44 +212,46 @@ void CollectIterator::init(Reader* reader) {
     if (_reader->_reader_type == READER_QUERY &&
             (_reader->_aggregation ||
              _reader->_tablet->keys_type() == KeysType::DUP_KEYS)) {
-        _merge = false;
+        _merge = false; // 当reader的类型是query、需要聚合或者tablet key的类型为DUP_KEYS时，_merge = false
         _heap.reset(nullptr);
     } else if (_reader->_tablet->keys_type() == KeysType::UNIQUE_KEYS) {
-        _heap.reset(new MergeHeap(ChildCtxComparator(true)));
+        _heap.reset(new MergeHeap(ChildCtxComparator(true))); // _merge默认为true
     } else {
         _heap.reset(new MergeHeap());
     }
 }
 
+/*创建rs_reader对应的ChildCtx对象，并添加到CollectIterator的成员变量_children中管理*/
 OLAPStatus CollectIterator::add_child(RowsetReaderSharedPtr rs_reader) {
-    std::unique_ptr<ChildCtx> child(new ChildCtx(rs_reader, _reader));
-    RETURN_NOT_OK(child->init());
-    if (child->current_row() == nullptr) {
+    std::unique_ptr<ChildCtx> child(new ChildCtx(rs_reader, _reader)); //使用rs_reader和_reader创建ChildCtx对象
+    RETURN_NOT_OK(child->init());            //初始化创建的ChildCtx对象
+    if (child->current_row() == nullptr) {   // 判断该rowset的当前行是否为空
         return OLAP_SUCCESS;
     }
 
-    ChildCtx* child_ptr = child.release();
-    _children.push_back(child_ptr);
+    ChildCtx* child_ptr = child.release(); // unique_ptr的release()函数只是把智能指针赋值为空，获取裸指针，但是它原来指向的内存并没有被释放，相当于它只是释放了智能指针对资源的所有权。
+    _children.push_back(child_ptr); // 将创建的ChildCtx对象添加到成员变量_children中管理
     if (_merge) {
-        _heap->push(child_ptr);
-        _cur_child = _heap->top();
+        _heap->push(child_ptr);                 // 将创建的ChildCtx对象添加到merge堆中
+        _cur_child = _heap->top();              // 更新_cur_child
     } else {
         if (_cur_child == nullptr) {
-            _cur_child = _children[_child_idx];
+            _cur_child = _children[_child_idx];  // 如果_cur_child为空，则初始化_cur_child
         }
     }
     return OLAP_SUCCESS;
 }
 
+/*使用ChildCtx对象从对应的rowset中读取一行数据，通过参数row返回，同时返回该行数据是否已被删除的标志*/
 inline OLAPStatus CollectIterator::_merge_next(const RowCursor** row, bool* delete_flag) {
-    _heap->pop();
-    auto res = _cur_child->next(row, delete_flag);
+    _heap->pop(); // 从堆中删除堆顶的ChildCtx对象
+    auto res = _cur_child->next(row, delete_flag); // 通过rowset reader获取一行数据，通过参数row传回，并将该行数据是否已经删除的标志通过参数delete_flag传回
     if (res == OLAP_SUCCESS) {
-        _heap->push(_cur_child);
-        _cur_child = _heap->top();
+        _heap->push(_cur_child);   // 将该行数据所对应的ChildCtx对象添加到堆中
+        _cur_child = _heap->top(); // 使用新的堆顶元素更新要读取的下一行数据所对应的ChildCtx对象
     } else if (res == OLAP_ERR_DATA_EOF) {
-        if (!_heap->empty()) {
-            _cur_child = _heap->top();
+        if (!_heap->empty()) {  // 如果堆不为空
+            _cur_child = _heap->top(); // 使用堆顶元素更新要读取的下一行数据所对应的ChildCtx对象
         } else {
             _cur_child = nullptr;
             return OLAP_ERR_DATA_EOF;
@@ -245,22 +260,24 @@ inline OLAPStatus CollectIterator::_merge_next(const RowCursor** row, bool* dele
         LOG(WARNING) << "failed to get next from child, res=" << res;
         return res;
     }
-    *row = _cur_child->current_row(delete_flag);
+    *row = _cur_child->current_row(delete_flag); //读取更新后的ChildCtx对象对应rowset中的当前行，以及该行是否已被删除的标志
     return OLAP_SUCCESS;
 }
 
+/*使用ChildCtx对象从对应的rowset中读取一行数据，通过参数row返回，同时返回该行数据是否已被删除的标志*/
 inline OLAPStatus CollectIterator::_normal_next(const RowCursor** row, bool* delete_flag) {
-    auto res = _cur_child->next(row, delete_flag);
+    auto res = _cur_child->next(row, delete_flag); // 通过rowset reader获取一行数据，通过参数row传回，并将该行数据是否已经删除的标志通过参数delete_flag传回
     if (LIKELY(res == OLAP_SUCCESS)) {
-        return OLAP_SUCCESS;
+        return OLAP_SUCCESS; // 从rowset中成功读取一行数据，函数返回
     } else if (res == OLAP_ERR_DATA_EOF) {
+        // 从rowset中读取一行数据失败，则从下一个rowset中读取一行数据
         // this child has been read, to read next
         _child_idx++;
-        if (_child_idx < _children.size()) {
-            _cur_child = _children[_child_idx];
-            *row = _cur_child->current_row(delete_flag);
+        if (_child_idx < _children.size()) { // 还存在rowset没有读
+            _cur_child = _children[_child_idx]; // 获取下一个rowset对应的ChildCtx对象
+            *row = _cur_child->current_row(delete_flag); //读取ChildCtx对象对应rowset中的当前行，以及该行是否已被删除的标志
             return OLAP_SUCCESS;
-        } else {
+        } else {                             // 所有rowset是否都已经读完
             _cur_child = nullptr;
             return OLAP_ERR_DATA_EOF;
         }
@@ -270,14 +287,16 @@ inline OLAPStatus CollectIterator::_normal_next(const RowCursor** row, bool* del
     }
 }
 
+/*比较两个ChildCtx对象对应rowset当前行的key列数据大小，如果两行数据的key列都相同，则比较两行数据的版本*/
 bool CollectIterator::ChildCtxComparator::operator()(const ChildCtx* a, const ChildCtx* b) {
     // First compare row cursor.
-    const RowCursor* first = a->current_row();
-    const RowCursor* second = b->current_row();
-    int cmp_res = compare_row(*first, *second);
+    const RowCursor* first = a->current_row(); // 获取当前行数据
+    const RowCursor* second = b->current_row();// 获取当前行数据
+    int cmp_res = compare_row(*first, *second); // 依次比较两行中的key列
     if (cmp_res != 0) {
         return cmp_res > 0;
     }
+    // 如果两行数据的key列都相同，则比较两行数据的版本
     // if row cursors equal, compare data version.
     // read data from higher version to lower version.
     // for UNIQUE_KEYS just read the highest version and no need agg_update.
@@ -288,30 +307,34 @@ bool CollectIterator::ChildCtxComparator::operator()(const ChildCtx* a, const Ch
     return a->version() > b->version();
 }
 
+/*释放所有rowset reader对应的ChildCtx对象*/
 void CollectIterator::clear() {
-    while (_heap != nullptr && !_heap->empty()) {
+    while (_heap != nullptr && !_heap->empty()) { // 将堆中的所有ChildCtx对象依次删除
         _heap->pop();
     }
-    for (auto child : _children) {
+    for (auto child : _children) { // 依次释放所有rowset reader对应的ChildCtx对象
         delete child;
     }
     // _children.swap(std::vector<ChildCtx*>());
-    _children.clear();
+    _children.clear(); // 清空vector类型的成员变量_children
     _cur_child = nullptr;
     _child_idx = 0;
 }
 
+/*Reader构造函数*/
 Reader::Reader() {
     _tracker.reset(new MemTracker(-1));
     _predicate_mem_pool.reset(new MemPool(_tracker.get()));
 }
 
+/*Reader析构函数*/
 Reader::~Reader() {
-    close();
+    close(); // 关闭reader
 }
 
+/*根据参数初始化Reader对象*/
 OLAPStatus Reader::init(const ReaderParams& read_params) {
-    OLAPStatus res = _init_params(read_params);
+    OLAPStatus res = _init_params(read_params); // 根据参数初始化Reader对象
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "fail to init reader when init params. res:" << res
                      << ", tablet_id:" << read_params.tablet->tablet_id()
@@ -331,7 +354,7 @@ OLAPStatus Reader::init(const ReaderParams& read_params) {
         return res;
     }
 
-    switch (_tablet->keys_type()) {
+    switch (_tablet->keys_type()) { // 根据tablet key的类型，选择不同的函数来读取一行数据
     case KeysType::DUP_KEYS:
         _next_row_func = &Reader::_dup_key_next_row;
         break;
@@ -350,13 +373,14 @@ OLAPStatus Reader::init(const ReaderParams& read_params) {
     return OLAP_SUCCESS;
 }
 
+/*读取一行数据，此时tablet key的类型为DUP_KEYS*/
 OLAPStatus Reader::_dup_key_next_row(RowCursor* row_cursor, MemPool* mem_pool, ObjectPool* agg_pool, bool* eof) {
     if (UNLIKELY(_next_key == nullptr)) {
         *eof = true;
         return OLAP_SUCCESS;
     }
-    direct_copy_row(row_cursor, *_next_key);
-    auto res = _collect_iter->next(&_next_key, &_next_delete_flag);
+    direct_copy_row(row_cursor, *_next_key); // 将_next_key处的一行数据逐列copy到row_cursor指向的地址
+    auto res = _collect_iter->next(&_next_key, &_next_delete_flag); //读取下一行数据到_next_key
     if (res != OLAP_SUCCESS) {
         if (res != OLAP_ERR_DATA_EOF) {
             return res;
@@ -365,6 +389,7 @@ OLAPStatus Reader::_dup_key_next_row(RowCursor* row_cursor, MemPool* mem_pool, O
     return OLAP_SUCCESS;
 }
 
+/*读取一行数据，此时tablet key的类型为AGG_KEYS*/
 OLAPStatus Reader::_agg_key_next_row(RowCursor* row_cursor, MemPool* mem_pool, ObjectPool* agg_pool, bool* eof) {
     if (UNLIKELY(_next_key == nullptr)) {
         *eof = true;
@@ -402,6 +427,7 @@ OLAPStatus Reader::_agg_key_next_row(RowCursor* row_cursor, MemPool* mem_pool, O
     return OLAP_SUCCESS;
 }
 
+/*读取一行数据，此时tablet key的类型为AGG_KEYS*/
 OLAPStatus Reader::_unique_key_next_row(RowCursor* row_cursor, MemPool* mem_pool, ObjectPool* agg_pool, bool* eof) {
     *eof = false;
     bool cur_delete_flag = false;
@@ -411,11 +437,11 @@ OLAPStatus Reader::_unique_key_next_row(RowCursor* row_cursor, MemPool* mem_pool
             return OLAP_SUCCESS;
         }
 
-        cur_delete_flag = _next_delete_flag;
+        cur_delete_flag = _next_delete_flag; // 获取当前行是否被删除的标志
         // the verion is in reverse order, the first row is the highest version,
         // in UNIQUE_KEY highest version is the final result, there is no need to
         // merge the lower versions
-        direct_copy_row(row_cursor, *_next_key);
+        direct_copy_row(row_cursor, *_next_key); // 将_next_key处的一行数据逐列copy到row_cursor指向的地址
         agg_finalize_row(_value_cids, row_cursor, mem_pool);
         // skip the lower version rows;
         while (nullptr != _next_key) {
@@ -432,16 +458,17 @@ OLAPStatus Reader::_unique_key_next_row(RowCursor* row_cursor, MemPool* mem_pool
                 break;
             }
         }
-        if (!cur_delete_flag) {
+        if (!cur_delete_flag) { // 判断当前行是否被删除
             return OLAP_SUCCESS;
         }
 
         _stats.rows_del_filtered++;
-    } while (cur_delete_flag);
+    } while (cur_delete_flag); // 如果当前行被删除，则继续读取下一行
 
     return OLAP_SUCCESS;
 }
 
+/*关闭reader*/
 void Reader::close() {
     VLOG(3) << "merged rows:" << _merged_rows;
     _conditions.finalize();
@@ -455,7 +482,7 @@ void Reader::close() {
 }
 
 OLAPStatus Reader::_capture_rs_readers(const ReaderParams& read_params) {
-    const std::vector<RowsetReaderSharedPtr>* rs_readers = &read_params.rs_readers;
+    const std::vector<RowsetReaderSharedPtr>* rs_readers = &read_params.rs_readers; // 从read_params中获取所有rowset reader
     if (rs_readers->empty()) {
         LOG(WARNING) << "fail to acquire data sources. tablet=" << _tablet->full_name();
         return OLAP_ERR_VERSION_NOT_EXIST;
@@ -553,6 +580,7 @@ OLAPStatus Reader::_capture_rs_readers(const ReaderParams& read_params) {
     return OLAP_SUCCESS;
 }
 
+/*使用参数传入的read_params初始化Reader对象*/
 OLAPStatus Reader::_init_params(const ReaderParams& read_params) {
     read_params.check_validation();
 
@@ -576,7 +604,7 @@ OLAPStatus Reader::_init_params(const ReaderParams& read_params) {
         return res;
     }
 
-    res = _init_keys_param(read_params);
+    res = _init_keys_param(read_params); // 根据参数传入的read_params初始化keys_param
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "fail to init keys param. res=" << res;
         return res;
@@ -584,8 +612,8 @@ OLAPStatus Reader::_init_params(const ReaderParams& read_params) {
 
     _init_seek_columns();
 
-    _collect_iter = new CollectIterator();
-    _collect_iter->init(this);
+    _collect_iter = new CollectIterator(); // 创建CollectIterator对象
+    _collect_iter->init(this);             // 初始化创建的CollectIterator对象
 
     return res;
 }
@@ -665,6 +693,7 @@ void Reader::_init_seek_columns() {
     }
 }
 
+/*根据参数传入的read_params初始化keys_param*/
 OLAPStatus Reader::_init_keys_param(const ReaderParams& read_params) {
     if (read_params.start_key.empty()) {
         return OLAP_SUCCESS;
@@ -674,21 +703,21 @@ OLAPStatus Reader::_init_keys_param(const ReaderParams& read_params) {
     _keys_param.end_range = read_params.end_range;
 
     size_t start_key_size = read_params.start_key.size();
-    _keys_param.start_keys.resize(start_key_size, nullptr);
-    for (size_t i = 0; i < start_key_size; ++i) {
-        if ((_keys_param.start_keys[i] = new(nothrow) RowCursor()) == nullptr) {
+    _keys_param.start_keys.resize(start_key_size, nullptr); // 为vector类型的_keys_param.start_keys分配大小，并使用nullptr初始化每一个元素
+    for (size_t i = 0; i < start_key_size; ++i) { // 依次遍历vector类型的_keys_param.start_keys中的每一个元素
+        if ((_keys_param.start_keys[i] = new(nothrow) RowCursor()) == nullptr) { // 创建RowCursor对象，并使用创建的RowCursor对象初始化_keys_param.start_keys[i]
             OLAP_LOG_WARNING("fail to new RowCursor!");
             return OLAP_ERR_MALLOC_ERROR;
         }
 
-        OLAPStatus res = _keys_param.start_keys[i]->init_scan_key(_tablet->tablet_schema(),
+        OLAPStatus res = _keys_param.start_keys[i]->init_scan_key(_tablet->tablet_schema(), // 使用read_params.start_key[i]初始化_keys_param.start_keys[i]
                                                        read_params.start_key[i].values());
         if (res != OLAP_SUCCESS) {
             OLAP_LOG_WARNING("fail to init row cursor. [res=%d]", res);
             return res;
         }
 
-        res = _keys_param.start_keys[i]->from_tuple(read_params.start_key[i]);
+        res = _keys_param.start_keys[i]->from_tuple(read_params.start_key[i]); // 使用read_params.start_key[i]初始化_keys_param.start_keys[i]
         if (res != OLAP_SUCCESS) {
             OLAP_LOG_WARNING("fail to init row cursor from Keys. [res=%d key_index=%ld]", res, i);
             return res;
@@ -696,21 +725,21 @@ OLAPStatus Reader::_init_keys_param(const ReaderParams& read_params) {
     }
 
     size_t end_key_size = read_params.end_key.size();
-    _keys_param.end_keys.resize(end_key_size, NULL);
-    for (size_t i = 0; i < end_key_size; ++i) {
-        if ((_keys_param.end_keys[i] = new(nothrow) RowCursor()) == NULL) {
+    _keys_param.end_keys.resize(end_key_size, NULL); // 为vector类型的_keys_param.end_keys分配大小，并使用nullptr初始化每一个元素
+    for (size_t i = 0; i < end_key_size; ++i) { // 依次遍历vector类型的_keys_param.end_keys中的每一个元素
+        if ((_keys_param.end_keys[i] = new(nothrow) RowCursor()) == NULL) { // 创建RowCursor对象，并使用创建的RowCursor对象初始化_keys_param.end_keys[i]
             OLAP_LOG_WARNING("fail to new RowCursor!");
             return OLAP_ERR_MALLOC_ERROR;
         }
 
-        OLAPStatus res = _keys_param.end_keys[i]->init_scan_key(_tablet->tablet_schema(),
+        OLAPStatus res = _keys_param.end_keys[i]->init_scan_key(_tablet->tablet_schema(),// 使用read_params.end_key[i]初始化_keys_param.end_keys[i]
                                                      read_params.end_key[i].values());
         if (res != OLAP_SUCCESS) {
             OLAP_LOG_WARNING("fail to init row cursor. [res=%d]", res);
             return res;
         }
 
-        res = _keys_param.end_keys[i]->from_tuple(read_params.end_key[i]);
+        res = _keys_param.end_keys[i]->from_tuple(read_params.end_key[i]);// 使用read_params.end_key[i]初始化_keys_param.end_keys[i]
         if (res != OLAP_SUCCESS) {
             OLAP_LOG_WARNING("fail to init row cursor from Keys. [res=%d key_index=%ld]", res, i);
             return res;
