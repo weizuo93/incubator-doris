@@ -29,107 +29,114 @@ AlphaRowsetReader::AlphaRowsetReader(
         _alpha_rowset_meta(std::static_pointer_cast<AlphaRowsetMeta>(_rowset->rowset_meta()).get()),
         _segment_groups(_rowset->_segment_groups),
         _key_range_size(0) {
-    _rowset->aquire();
+    _rowset->aquire(); // 获取rowset，会使_rowset对象的成员变量_refs_by_reader增1，即引用计数增1
 }
 
 AlphaRowsetReader::~AlphaRowsetReader() {
     delete _dst_cursor;
-    _rowset->release();
+    _rowset->release(); // 该rowset reader释放rowset，_rowset对象的成员变量_refs_by_reader减1，即引用计数减1
 }
 
+/*初始化rowset reader*/
 OLAPStatus AlphaRowsetReader::init(RowsetReaderContext* read_context) {
-    RETURN_NOT_OK(_rowset->load());
+    RETURN_NOT_OK(_rowset->load()); // 加载rowset，rowset的状态变为ROWSET_LOADED
     if (read_context == nullptr) {
         return OLAP_ERR_INIT_FAILED;
     }
     _current_read_context = read_context;
     if (_current_read_context->stats != nullptr) {
-        _stats = _current_read_context->stats;
+        _stats = _current_read_context->stats; // 使用上层reader的stats初始化当前rowset reader对象的stats
     }
 
-    _is_segments_overlapping = _alpha_rowset_meta->is_segments_overlapping();
+    _is_segments_overlapping = _alpha_rowset_meta->is_segments_overlapping(); // 判断segment是否有重叠
     _ordinal = 0;
 
-    RETURN_NOT_OK(_init_merge_ctxs(read_context));
+    RETURN_NOT_OK(_init_merge_ctxs(read_context)); // 使用上层reader的reader_context初始化当前rowset reader对象的merge context。每一个AlphaMergeContext对象对应rowset中的一个segment group
 
     // needs to sort merge only when
     // 1) we are told to return sorted result (need_ordered_result)
     // 2) we have several segment groups (_is_segments_overlapping && _merge_ctxs.size() > 1)
     if (_current_read_context->need_ordered_result && _is_segments_overlapping && _merge_ctxs.size() > 1) {
-        _next_block = &AlphaRowsetReader::_merge_block;
-        _read_block.reset(new (std::nothrow) RowBlock(_current_read_context->tablet_schema));
+        _next_block = &AlphaRowsetReader::_merge_block; // 如果需要返回有序行数据，将_merge_block()函数赋值给_next_block()
+        _read_block.reset(new (std::nothrow) RowBlock(_current_read_context->tablet_schema)); // 创建一个RowBlock对象，用来初始化成员变量_read_block
         if (_read_block == nullptr) {
             LOG(WARNING) << "new row block failed in reader";
             return OLAP_ERR_MALLOC_ERROR;
         }
         RowBlockInfo block_info;
-        block_info.row_num = _current_read_context->tablet_schema->num_rows_per_row_block();
-        block_info.null_supported = true;
-        _read_block->init(block_info);
-        _dst_cursor = new (std::nothrow) RowCursor();
+        block_info.row_num = _current_read_context->tablet_schema->num_rows_per_row_block(); // 获取每个RowBlock对象包含的行数
+        block_info.null_supported = true; // 默认支持空值
+        _read_block->init(block_info);    // 使用RowBlockInfo对象初始化成员变量_read_block
+        _dst_cursor = new (std::nothrow) RowCursor(); // 创建RowCursor对象
         if (_dst_cursor == nullptr) {
             LOG(WARNING) << "allocate memory for row cursor failed";
             return OLAP_ERR_MALLOC_ERROR;
         }
-        if (_current_read_context->reader_type == READER_ALTER_TABLE) {
+        if (_current_read_context->reader_type == READER_ALTER_TABLE) { // 判断reader类型是否为READER_ALTER_TABLE
             // Upon rollup/alter table, seek_columns is nullptr.
             // Under this circumstance, init RowCursor with all columns.
-            _dst_cursor->init(*(_current_read_context->tablet_schema));
-            for (size_t i = 0; i < _merge_ctxs.size(); ++i) {
+            _dst_cursor->init(*(_current_read_context->tablet_schema)); // 如果reader类型是READER_ALTER_TABLE，使用整个schema初始化RowCursor对象
+            for (size_t i = 0; i < _merge_ctxs.size(); ++i) { // 依次初始化每一个AlphaMergeContext对象
                 _merge_ctxs[i].row_cursor.reset(new (std::nothrow) RowCursor());
                 _merge_ctxs[i].row_cursor->init(*(_current_read_context->tablet_schema));
             }
         } else {
-            _dst_cursor->init(*(_current_read_context->tablet_schema),
+            _dst_cursor->init(*(_current_read_context->tablet_schema), // 如果reader类型不是READER_ALTER_TABLE，使用整个seek_columns初始化RowCursor对象
                               *(_current_read_context->seek_columns));
-            for (size_t i = 0; i < _merge_ctxs.size(); ++i) {
+            for (size_t i = 0; i < _merge_ctxs.size(); ++i) { // 依次初始化每一个AlphaMergeContext对象
                 _merge_ctxs[i].row_cursor.reset(new (std::nothrow) RowCursor());
                 _merge_ctxs[i].row_cursor->init(*(_current_read_context->tablet_schema),
                                                 *(_current_read_context->seek_columns));
             }
         }
-        RETURN_NOT_OK(_init_merge_heap());
+        RETURN_NOT_OK(_init_merge_heap()); // 初始化 merge heap
     } else {
-        _next_block = &AlphaRowsetReader::_union_block;
+        _next_block = &AlphaRowsetReader::_union_block; // 如果不需要返回有序行数据，将_union_block()函数赋值给_next_block()
     }
     return OLAP_SUCCESS;
 }
 
+/*获取该rowset的下一个row block*/
 OLAPStatus AlphaRowsetReader::next_block(RowBlock** block) {
     return (this->*_next_block)(block);
 }
 
+/*获取当前rowset是否已被删除的标志*/
 bool AlphaRowsetReader::delete_flag() {
     return _alpha_rowset_meta->delete_flag();
 }
 
+/*获取当前rowset的版本信息{start_version，end_version}*/
 Version AlphaRowsetReader::version() {
     return _alpha_rowset_meta->version();
 }
 
+/*获取当前rowset的版本hash*/
 VersionHash AlphaRowsetReader::version_hash() {
     return _alpha_rowset_meta->version_hash();
 }
 
+/*获取当前rowset中因为被删除而过滤的行数*/
 int64_t AlphaRowsetReader::filtered_rows() {
     return _stats->rows_del_filtered;
 }
 
+/*获取该rowset的下一个row block*/
 OLAPStatus AlphaRowsetReader::_union_block(RowBlock** block) {
-    while (_ordinal < _merge_ctxs.size()) {
+    while (_ordinal < _merge_ctxs.size()) { // ordinal记录当前read的AlphaMergeContext对象
         // union block only use one block to store
-        OLAPStatus status = _pull_next_block(&(_merge_ctxs[_ordinal]));
-        if (status == OLAP_ERR_DATA_EOF) {
+        OLAPStatus status = _pull_next_block(&(_merge_ctxs[_ordinal])); // 从_merge_ctxs[_ordinal]中获取下一个row block
+        if (status == OLAP_ERR_DATA_EOF) { // 当前AlphaMergeContext对象中的行数据已经被读完
             _ordinal++;
             continue;
         } else if (status != OLAP_SUCCESS) {
             return status;
-        } else {
+        } else {                            // 从_merge_ctxs[_ordinal]中成功获取一个row block
             (*block) = _merge_ctxs[_ordinal].row_block;
             return OLAP_SUCCESS;
         }
     }
-    if (_ordinal == _merge_ctxs.size()) {
+    if (_ordinal == _merge_ctxs.size()) { // rowset中所有AlphaMergeContext对象的行数据已经被读完
         *block = nullptr;
         return OLAP_ERR_DATA_EOF;
     }
@@ -179,6 +186,7 @@ OLAPStatus AlphaRowsetReader::_merge_block(RowBlock** block) {
     return status;
 }
 
+/*初始化merge heap*/
 OLAPStatus AlphaRowsetReader::_init_merge_heap() {
     if (_merge_heap.empty() && !_merge_ctxs.empty()) {
         for (auto& merge_ctx : _merge_ctxs) {

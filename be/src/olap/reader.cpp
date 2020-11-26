@@ -139,7 +139,7 @@ private:
                     }
                     _current_row = &_row_cursor; // 获取一行数据，保存在成员变量_current_row中
                     return OLAP_SUCCESS;
-                } else {                                                     // 如果当前RowBlock为空，或当前行位置达到了RowBlock的内部buf的上限
+                } else { // 如果当前RowBlock为空，或当前行位置达到了RowBlock的内部buf的上限
                     auto res = _rs_reader->next_block(&_row_block); // 获取下一个RowBlock，通过参数传回
                     if (res != OLAP_SUCCESS) {
                         _current_row = nullptr;
@@ -210,7 +210,7 @@ void CollectIterator::init(Reader* reader) {
     // when aggregate is enabled or key_type is DUP_KEYS, we don't merge
     // multiple data to aggregate for performance in user fetch
     if (_reader->_reader_type == READER_QUERY &&
-            (_reader->_aggregation ||
+            (_reader->_aggregation ||     // _reader->_aggregation为true，上层计算引擎会对数据进行聚合，此处读行数据的时不需要merge
              _reader->_tablet->keys_type() == KeysType::DUP_KEYS)) {
         _merge = false; // 当reader的类型是query、需要聚合或者tablet key的类型为DUP_KEYS时，_merge = false
         _heap.reset(nullptr);
@@ -415,7 +415,7 @@ OLAPStatus Reader::_agg_key_next_row(RowCursor* row_cursor, MemPool* mem_pool, O
         }
 
         if (_aggregation && merged_count > config::doris_scanner_row_num) {
-            break; // 需要做数据聚合，同时已经merge的行数超过了设定的单次读行数上限
+            break; // _aggregation为true，同时已经merge的行数超过了设定的单次读行数上限
         }
 
         // break while can NOT doing aggregation
@@ -554,7 +554,7 @@ OLAPStatus Reader::_capture_rs_readers(const ReaderParams& read_params) {
         if (_aggregation) {
             // compute engine will aggregate rows with the same key,
             // it's ok for rowset to return unordered result
-            need_ordered_result = false; // 如果读取的数据需要聚合，则读取的行数据需要排序
+            need_ordered_result = false; // 如果成员变量_aggregation的值为true，上层计算引擎会对数据进行聚合，从rowset中读到的数据可以是无需的
         }
     }
 

@@ -30,7 +30,7 @@
 namespace doris {
 
 // Each segment group corresponds to a MergeContext, which is able to produce ordered rows.
-struct AlphaMergeContext {
+struct AlphaMergeContext { // 每一个AlphaMergeContext对象对应rowset中的一个segment group, 可以用来获取有序的数据行
     std::unique_ptr<ColumnData> column_data = nullptr;
 
     int key_range_index = -1;
@@ -105,7 +105,7 @@ private:
     AlphaRowsetMeta* _alpha_rowset_meta;
     const std::vector<std::shared_ptr<SegmentGroup>>& _segment_groups;
 
-    std::vector<AlphaMergeContext> _merge_ctxs;
+    std::vector<AlphaMergeContext> _merge_ctxs; // 每一个AlphaMergeContext对象对应rowset中的一个segment group
     std::unique_ptr<RowBlock> _read_block;
     OLAPStatus (AlphaRowsetReader::*_next_block)(RowBlock** block) = nullptr;
     RowCursor* _dst_cursor = nullptr;
