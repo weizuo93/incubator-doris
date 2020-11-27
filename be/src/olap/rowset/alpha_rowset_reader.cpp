@@ -132,7 +132,7 @@ OLAPStatus AlphaRowsetReader::_union_block(RowBlock** block) {
         } else if (status != OLAP_SUCCESS) {
             return status;
         } else {                            // 从_merge_ctxs[_ordinal]中成功获取一个row block
-            (*block) = _merge_ctxs[_ordinal].row_block;
+            (*block) = _merge_ctxs[_ordinal].row_block; // 获取指向该row block对象的指针，该指针会通过函数参数返回
             return OLAP_SUCCESS;
         }
     }
@@ -144,16 +144,17 @@ OLAPStatus AlphaRowsetReader::_union_block(RowBlock** block) {
     return OLAP_SUCCESS;
 }
 
+/*获取该rowset的下一个row block*/
 OLAPStatus AlphaRowsetReader::_merge_block(RowBlock** block) {
     // Row among different segment groups may overlap with each other.
     // Iterate all row_blocks to fetch min row each round.
     OLAPStatus status = OLAP_SUCCESS;
-    _read_block->clear();
+    _read_block->clear(); // 复位row block
     size_t num_rows_in_block = 0;
-    while (_read_block->pos() < _num_rows_per_row_block) {
+    while (_read_block->pos() < _num_rows_per_row_block) { // 依次遍历row block，向其中的每一行添加数据
         RowCursor* row_cursor = nullptr;
-        status = _pull_next_row_for_merge_rowset_v2(&row_cursor);
-        if (status == OLAP_ERR_DATA_EOF && _read_block->pos() > 0) {
+        status = _pull_next_row_for_merge_rowset_v2(&row_cursor); // 从merge heap中获取堆顶merge_ctx对象的一行数据,通过指针row_cursor传回
+        if (status == OLAP_ERR_DATA_EOF && _read_block->pos() > 0) { // rowset中所有AlphaMergeContext对象的行数据已经被读完
             status = OLAP_SUCCESS;
             break;
         } else if (status != OLAP_SUCCESS) {
@@ -162,9 +163,9 @@ OLAPStatus AlphaRowsetReader::_merge_block(RowBlock** block) {
 
         VLOG(10) << "get merged row: " << row_cursor->to_string();
 
-        _read_block->get_row(_read_block->pos(), _dst_cursor);
-        copy_row(_dst_cursor, *row_cursor, _read_block->mem_pool());
-        _read_block->pos_inc();
+        _read_block->get_row(_read_block->pos(), _dst_cursor);   //  获取row block中pos位置的行数据指针_dst_cursor
+        copy_row(_dst_cursor, *row_cursor, _read_block->mem_pool()); // 将merge heap中指针row_cursor所指的行数据copy到row block中指针_dst_cursor所指的位置
+        _read_block->pos_inc(); // row block中pos增1
         num_rows_in_block++;
 
         // MergeHeap should advance one step after row been read.
@@ -175,38 +176,39 @@ OLAPStatus AlphaRowsetReader::_merge_block(RowBlock** block) {
         // Now I have read (1, 1).
         // Before copy_row, I rebuild the heap
         // The returned row will be (2, 2) instead of (1, 1)
-        AlphaMergeContext* merge_ctx = _merge_heap.top();
-        _merge_heap.pop();
-        RETURN_NOT_OK(_update_merge_ctx_and_build_merge_heap(merge_ctx));
+        AlphaMergeContext* merge_ctx = _merge_heap.top(); // 获取merge heap的堆顶元素
+        _merge_heap.pop(); // 堆顶元素的一行数据已经被copy到了row block，从堆中删除堆顶元素
+        RETURN_NOT_OK(_update_merge_ctx_and_build_merge_heap(merge_ctx)); //更新merge_ctx的row_cursor指针所指的行数据，并将merge_ctx重新添加到堆中
     }
-    _read_block->set_pos(0);
-    _read_block->set_limit(num_rows_in_block);
+    _read_block->set_pos(0);                   // 初始化_read_block的pos为0
+    _read_block->set_limit(num_rows_in_block); // 为_read_block设置总行数
     _read_block->finalize(num_rows_in_block);
-    *block = _read_block.get();
+    *block = _read_block.get();                // 获取指向该row block对象的指针，该指针会通过函数参数返回
     return status;
 }
 
-/*初始化merge heap*/
+/*初始化merge heap，将_merge_ctxs中的每一个merge_ctx添加到堆中，并且每一个_merge_ctxs的成员指针row_cursor指向其第一个row block的第一行数据*/
 OLAPStatus AlphaRowsetReader::_init_merge_heap() {
     if (_merge_heap.empty() && !_merge_ctxs.empty()) {
-        for (auto& merge_ctx : _merge_ctxs) {
-            RETURN_NOT_OK(_update_merge_ctx_and_build_merge_heap(&merge_ctx));
+        for (auto& merge_ctx : _merge_ctxs) { // 遍历_merge_ctxs中的每一个merge_ctx对象
+            RETURN_NOT_OK(_update_merge_ctx_and_build_merge_heap(&merge_ctx)); //使merge_ctx->row_cursor指向merge_ctx中第一个row_block中的第一行数据，并将merge_ctx添加到堆中
         }
     }
     return OLAP_SUCCESS;
 }
 
+/*使merge_ctx->row_cursor指向merge_ctx->row_block中的一行数据，并将merge_ctx添加到堆中*/
 OLAPStatus AlphaRowsetReader::_update_merge_ctx_and_build_merge_heap(AlphaMergeContext* merge_ctx) {
-    if (merge_ctx->is_eof) {
+    if (merge_ctx->is_eof) { // merge_ctx中的行数据已经被读完
         // nothing in this merge ctx, just return
         return OLAP_SUCCESS;
     }  
 
     // get next row block of this merge ctx
-    if (merge_ctx->row_block == nullptr || !merge_ctx->row_block->has_remaining()) {
-        OLAPStatus status = _pull_next_block(merge_ctx);
+    if (merge_ctx->row_block == nullptr || !merge_ctx->row_block->has_remaining()) { // 如果merge_ctx->row_block中的行数据已经被读完
+        OLAPStatus status = _pull_next_block(merge_ctx); // 从merge_ctx中获取下一个row block
         if (status == OLAP_ERR_DATA_EOF) {
-            merge_ctx->is_eof = true;
+            merge_ctx->is_eof = true; // 如果merge_ctx已经到了结尾，获取不到下一个row block，则更新merge_ctx对象的is_eof
             return OLAP_SUCCESS;
         } else if (status != OLAP_SUCCESS) {
             LOG(WARNING) << "read next row of singleton rowset failed:" << status;
@@ -215,19 +217,20 @@ OLAPStatus AlphaRowsetReader::_update_merge_ctx_and_build_merge_heap(AlphaMergeC
     }
 
     // read the first row, push it into merge heap, and step forward
-    RowCursor* current_row = merge_ctx->row_cursor.get();
-    merge_ctx->row_block->get_row(merge_ctx->row_block->pos(), current_row);
-    _merge_heap.push(merge_ctx);
-    merge_ctx->row_block->pos_inc();
+    RowCursor* current_row = merge_ctx->row_cursor.get(); // 通过merge_ctx获取一行数据的指针
+    merge_ctx->row_block->get_row(merge_ctx->row_block->pos(), current_row); // 将指针current_row指向merge_ctx->row_block中的pos位置
+    _merge_heap.push(merge_ctx); // 将merge_ctx添加到堆中
+    merge_ctx->row_block->pos_inc(); // merge_ctx->row_block中的pos值增1
     return OLAP_SUCCESS;
 }
 
+/*从rowset中获取最小的数据行（从merge heap中获取堆顶merge_ctx对象的一行数据）,通过指针row_cursor传回*/
 OLAPStatus AlphaRowsetReader::_pull_next_row_for_merge_rowset_v2(RowCursor** row) {
     // if _merge_heap is not empty, return the row at top, and insert a new row
     // from conresponding merge_ctx
     if (!_merge_heap.empty()) {
-        AlphaMergeContext* merge_ctx = _merge_heap.top();
-        *row = merge_ctx->row_cursor.get();
+        AlphaMergeContext* merge_ctx = _merge_heap.top(); // 如果_merge_heap堆不为空，则获取堆顶的merge_ctx对象
+        *row = merge_ctx->row_cursor.get(); // 获取堆顶merge_ctx对象的一行数据，该行数据指针会通过函数参数返回
         // Must not rebuild merge_heap in this place.
         // Because row have not been copied and is a pointer.
         // If rebuild merge_heap, content in row will be modified.
@@ -238,36 +241,38 @@ OLAPStatus AlphaRowsetReader::_pull_next_row_for_merge_rowset_v2(RowCursor** row
     }
 }
 
+/*从rowset中获取最小的数据行（遍历_merge_ctxs中每一个merge_ctx的第一行数据，选择最小的数据行），通过参数row返回*/
 OLAPStatus AlphaRowsetReader::_pull_next_row_for_merge_rowset(RowCursor** row) {
-    RowCursor* min_row = nullptr;
-    int min_index = -1;
+    RowCursor* min_row = nullptr;  // 用来记录rowset中最小的数据行
+    int min_index = -1;            // 用来记录rowset中最小数据行对应的merge_ctx在_merge_ctxs中的下标
 
     size_t ordinal = 0;
-    while (ordinal < _merge_ctxs.size()) {
+    while (ordinal < _merge_ctxs.size()) { // 依次遍历_merge_ctxs中每一个merge_ctx
         AlphaMergeContext* merge_ctx = &(_merge_ctxs[ordinal]);
-        if (merge_ctx->row_block == nullptr || !merge_ctx->row_block->has_remaining()) {
-            OLAPStatus status = _pull_next_block(merge_ctx);
+        if (merge_ctx->row_block == nullptr || !merge_ctx->row_block->has_remaining()) { // 如果merge_ctx->row_block中的行数据已经被读完
+            OLAPStatus status = _pull_next_block(merge_ctx); // 如果merge_ctx已经到了结尾，获取不到下一个row block，从merge_ctx中获取下一个row_block
             if (status == OLAP_ERR_DATA_EOF) {
-                _merge_ctxs.erase(_merge_ctxs.begin() + ordinal);
-                continue;
+                _merge_ctxs.erase(_merge_ctxs.begin() + ordinal); // 从_merge_ctxs中删除当前的如果merge_ctx对象
+                continue; // 继续判断下一个merge_ctx对象（当前merge_ctx对象已经被删除，下一个merge_ctx对象的下标会更新为当前merge_ctx对象的下标，因此ordinal不需要增1）
             } else if (status != OLAP_SUCCESS) {
                 LOG(WARNING) << "read next row of singleton rowset failed:" << status;
                 return status;
             }
         }
-        RowCursor* current_row = merge_ctx->row_cursor.get();
-        merge_ctx->row_block->get_row(merge_ctx->row_block->pos(), current_row);
-        if (min_row == nullptr || compare_row(*min_row, *current_row) >  0) {
-            min_row = current_row;
-            min_index = ordinal;
+        // merge_ctx->row_block中存在行数据
+        RowCursor* current_row = merge_ctx->row_cursor.get(); // 获取merge_ctx对象的成员指针row_cursor
+        merge_ctx->row_block->get_row(merge_ctx->row_block->pos(), current_row); // 将指针current_row指向merge_ctx->row_block中的pos位置
+        if (min_row == nullptr || compare_row(*min_row, *current_row) >  0) { // 判断当前merge_ctx对象的第一行数据是否小于当前记录的最小数据行
+            min_row = current_row; // 更新rowset中最小的数据行
+            min_index = ordinal;   // 更新rowset中最小数据行对应的merge_ctx在_merge_ctxs中的下标
         }
-        ordinal++;
+        ordinal++; // 继续判断下一个merge_ctx对象
     }
-    if (min_row == nullptr || min_index == -1) {
+    if (min_row == nullptr || min_index == -1) { // 判断是否_merge_ctxs中所有的merge_ctx都已经到了结尾，获取不到下一个row block
         return OLAP_ERR_DATA_EOF;
     }
-    *row = min_row;
-    _merge_ctxs[min_index].row_block->pos_inc();
+    *row = min_row; // 获取到rowset中最小的数据行，将通过函数参数返回
+    _merge_ctxs[min_index].row_block->pos_inc(); // rowset中最小的数据行已经被读出，该数据行所在的merge_ctx对象中row_block的pos属性增1，指向下一个数据行
     return OLAP_SUCCESS;
 }
 
@@ -325,7 +330,7 @@ OLAPStatus AlphaRowsetReader::_pull_first_block(AlphaMergeContext* merge_ctx) {
 }
 
 OLAPStatus AlphaRowsetReader::_init_merge_ctxs(RowsetReaderContext* read_context) {
-    if (read_context->reader_type == READER_QUERY) {
+    if (read_context->reader_type == READER_QUERY) { // 判断reader类型是否为READER_QUERY
         if (read_context->lower_bound_keys->size() != read_context->is_lower_keys_included->size()
                 || read_context->lower_bound_keys->size() != read_context->upper_bound_keys->size()
                 || read_context->upper_bound_keys->size() != read_context->is_upper_keys_included->size()) {
@@ -348,7 +353,7 @@ OLAPStatus AlphaRowsetReader::_init_merge_ctxs(RowsetReaderContext* read_context
         }
         new_column_data->set_delete_handler(read_context->delete_handler);
         new_column_data->set_stats(_stats);
-        if (read_context->reader_type == READER_ALTER_TABLE) {
+        if (read_context->reader_type == READER_ALTER_TABLE) { // 判断reader类型是否为READER_ALTER_TABLE
             new_column_data->schema_change_init();
             new_column_data->set_using_cache(use_index_stream_cache);
             if (new_column_data->empty() && new_column_data->zero_num_rows()) {
@@ -400,10 +405,12 @@ OLAPStatus AlphaRowsetReader::_init_merge_ctxs(RowsetReaderContext* read_context
     return OLAP_SUCCESS;
 }
 
+/*获取当前rowset reader对应的rowset*/
 RowsetSharedPtr AlphaRowsetReader::rowset() {
     return std::static_pointer_cast<Rowset>(_rowset);
 }
 
+/*比较两个AlphaMergeContext对象row_cursor成员指针所指的数据行的大小*/
 bool AlphaMergeContextComparator::operator() (const AlphaMergeContext* x, const AlphaMergeContext* y) const {
     return compare_row(*(x->row_cursor.get()), *(y->row_cursor.get())) > 0;
 }

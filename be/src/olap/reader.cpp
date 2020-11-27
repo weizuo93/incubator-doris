@@ -681,7 +681,7 @@ OLAPStatus Reader::_init_return_columns(const ReaderParams& read_params) {
 /*初始化_seek_columns*/
 void Reader::_init_seek_columns() {
     std::unordered_set<uint32_t> column_set(_return_columns.begin(), _return_columns.end()); // 使用_return_columns初始化column_set
-    for (auto& it : _conditions.columns()) {
+    for (auto& it : _conditions.columns()) { // 遍历condition涉及的列，将这些列的id添加到column_set
         column_set.insert(it.first);
     }
     uint32_t max_key_column_count = 0;

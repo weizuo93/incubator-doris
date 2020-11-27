@@ -471,7 +471,7 @@ void OlapScanner::update_counter() {
 
     COUNTER_UPDATE(_parent->_stats_filtered_counter, _reader->stats().rows_stats_filtered);
     COUNTER_UPDATE(_parent->_bf_filtered_counter, _reader->stats().rows_bf_filtered);
-    COUNTER_UPDATE(_parent->_del_filtered_counter, _reader->stats().rows_del_filtered);             // 因为被删除而过滤的行数
+    COUNTER_UPDATE(_parent->_del_filtered_counter, _reader->stats().rows_del_filtered); // 因为被删除而过滤的行数(该语句的含义：_parent->_del_filtered_counter += _reader->stats().rows_del_filtered)
     COUNTER_UPDATE(_parent->_key_range_filtered_counter, _reader->stats().rows_key_range_filtered);
 
     COUNTER_UPDATE(_parent->_index_load_timer, _reader->stats().index_load_ns);
