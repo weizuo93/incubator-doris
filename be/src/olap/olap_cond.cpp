@@ -652,9 +652,9 @@ bool Conditions::rowset_pruning_filter(const std::vector<KeyRange>& zone_maps) c
     // ZoneMap will store min/max of rowset.
     // The function is to filter rowset using ZoneMaps
     // and query predicates.
-    for (auto& cond_it : _columns) {
-        if (_cond_column_is_key_or_duplicate(cond_it.second)) {
-            if (cond_it.first < zone_maps.size() && !cond_it.second->eval(zone_maps.at(cond_it.first))) {
+    for (auto& cond_it : _columns) { // 依次遍历每一个condition column
+        if (_cond_column_is_key_or_duplicate(cond_it.second)) { // 判断该condition column是否为key，或schema的key类型是否为DUP_KEYS
+            if (cond_it.first < zone_maps.size() && !cond_it.second->eval(zone_maps.at(cond_it.first))) { // 通过单列上的所有查询条件对version进行过滤
                 return true;
             }
         }

@@ -47,10 +47,10 @@ struct RowsetReaderContext {
     // column name -> column predicate
     // adding column_name for predicate to make use of column selectivity
     const std::vector<ColumnPredicate*>* predicates = nullptr;
-    const std::vector<RowCursor*>* lower_bound_keys = nullptr;
-    const std::vector<bool>* is_lower_keys_included = nullptr;
-    const std::vector<RowCursor*>* upper_bound_keys = nullptr;
-    const std::vector<bool>* is_upper_keys_included = nullptr;
+    const std::vector<RowCursor*>* lower_bound_keys = nullptr; // rowset中每一个segment中key的下限值
+    const std::vector<bool>* is_lower_keys_included = nullptr; // rowset中每一个segment中是否包含key的下限值（>=还是>）
+    const std::vector<RowCursor*>* upper_bound_keys = nullptr; // rowset中每一个segment中key的上限值
+    const std::vector<bool>* is_upper_keys_included = nullptr; // rowset中每一个segment中是否包含key的上限值（<=还是<）
     const DeleteHandler* delete_handler = nullptr;
     OlapReaderStatistics* stats = nullptr;
     RuntimeState* runtime_state = nullptr;

@@ -329,37 +329,38 @@ OLAPStatus AlphaRowsetReader::_pull_first_block(AlphaMergeContext* merge_ctx) {
     return status;
 }
 
+/*初始化merge_ctxs*/
 OLAPStatus AlphaRowsetReader::_init_merge_ctxs(RowsetReaderContext* read_context) {
     if (read_context->reader_type == READER_QUERY) { // 判断reader类型是否为READER_QUERY
         if (read_context->lower_bound_keys->size() != read_context->is_lower_keys_included->size()
                 || read_context->lower_bound_keys->size() != read_context->upper_bound_keys->size()
-                || read_context->upper_bound_keys->size() != read_context->is_upper_keys_included->size()) {
+                || read_context->upper_bound_keys->size() != read_context->is_upper_keys_included->size()) { // 验证read_context中关于key range的信息是否有效
             std::string error_msg = "invalid key range arguments";
             LOG(WARNING) << error_msg;
             return OLAP_ERR_INPUT_PARAMETER_ERROR;
         }
-        _key_range_size = read_context->lower_bound_keys->size();
+        _key_range_size = read_context->lower_bound_keys->size(); // 获取rowset中key range的数目
     }
 
     // avoid polluting index stream cache by non-query workload (compaction/alter/checksum)
     const bool use_index_stream_cache = read_context->reader_type == READER_QUERY;
 
-    for (auto& segment_group : _segment_groups) {
-        std::unique_ptr<ColumnData> new_column_data(ColumnData::create(segment_group.get()));
-        OLAPStatus status = new_column_data->init();
+    for (auto& segment_group : _segment_groups) { // 依次遍历每一个segment group
+        std::unique_ptr<ColumnData> new_column_data(ColumnData::create(segment_group.get())); // 根据当前的segment_group创建ColumnData对象，每一个ColumnData对象对应一个segment_group
+        OLAPStatus status = new_column_data->init(); //初始化当前segment_group对应的ColumnData对象
         if (status != OLAP_SUCCESS) {
             LOG(WARNING) << "init column data failed";
             return OLAP_ERR_READER_READING_ERROR;
         }
-        new_column_data->set_delete_handler(read_context->delete_handler);
-        new_column_data->set_stats(_stats);
+        new_column_data->set_delete_handler(read_context->delete_handler); // 为ColumnData对象设置delete_handler
+        new_column_data->set_stats(_stats);                                // 为ColumnData对象设置stats
         if (read_context->reader_type == READER_ALTER_TABLE) { // 判断reader类型是否为READER_ALTER_TABLE
             new_column_data->schema_change_init();
             new_column_data->set_using_cache(use_index_stream_cache);
             if (new_column_data->empty() && new_column_data->zero_num_rows()) {
                 continue;
             }
-        } else {
+        } else { // reader类型是不是READER_ALTER_TABLE
             new_column_data->set_read_params(*read_context->return_columns,
                     *read_context->seek_columns,
                     *read_context->load_bf_columns,
@@ -368,7 +369,7 @@ OLAPStatus AlphaRowsetReader::_init_merge_ctxs(RowsetReaderContext* read_context
                     use_index_stream_cache,
                     read_context->runtime_state);
             // filter
-            if (new_column_data->rowset_pruning_filter()) {
+            if (new_column_data->rowset_pruning_filter()) { // 判断当前ColumnData对象对应的segment group是否被查询条件过滤掉了
                 _stats->rows_stats_filtered += new_column_data->num_rows();
                 VLOG(3) << "filter segment group in query in condition. version="
                         << new_column_data->version().first
@@ -377,24 +378,24 @@ OLAPStatus AlphaRowsetReader::_init_merge_ctxs(RowsetReaderContext* read_context
             }
         }
 
-        int ret = new_column_data->delete_pruning_filter();
-        if (ret == DEL_SATISFIED) {
+        int ret = new_column_data->delete_pruning_filter();  // 判断当前ColumnData对象对应的segment group是否因为delete操作而被过滤掉了
+        if (ret == DEL_SATISFIED) {               // 当前ColumnData对象对应的segment group中所有行满足删除条件
             _stats->rows_del_filtered += new_column_data->num_rows();
             VLOG(3) << "filter segment group in delete predicate:"
                     << new_column_data->version().first << ", " << new_column_data->version().second;
             continue;
-        } else if (ret == DEL_PARTIAL_SATISFIED) {
+        } else if (ret == DEL_PARTIAL_SATISFIED) { // 当前ColumnData对象对应的segment group中部分行满足删除条件
             VLOG(3) << "filter segment group partially in delete predicate:"
                     << new_column_data->version().first << ", " << new_column_data->version().second;
             new_column_data->set_delete_status(DEL_PARTIAL_SATISFIED);
-        } else {
+        } else {                                   // 当前ColumnData对象对应的segment group中每一行都不满足删除条件
             VLOG(3) << "not filter segment group in delete predicate:"
                     << new_column_data->version().first << ", " << new_column_data->version().second;
             new_column_data->set_delete_status(DEL_NOT_SATISFIED);
         }
-        AlphaMergeContext merge_ctx;
-        merge_ctx.column_data = std::move(new_column_data);
-        _merge_ctxs.emplace_back(std::move(merge_ctx));
+        AlphaMergeContext merge_ctx; // 创建当前segment group对应的AlphaMergeContext对象merge_ctx
+        merge_ctx.column_data = std::move(new_column_data); // 使用当前的ColumnData对象初始化merge_ctx.column_data
+        _merge_ctxs.emplace_back(std::move(merge_ctx)); // 将AlphaMergeContext对象添加到成员变量_merge_ctxs中
     }
 
     if (!_is_segments_overlapping && _merge_ctxs.size() > 1) {

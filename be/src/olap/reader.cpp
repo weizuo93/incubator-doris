@@ -597,10 +597,10 @@ OLAPStatus Reader::_init_params(const ReaderParams& read_params) {
     _reader_type = read_params.reader_type;
     _tablet = read_params.tablet;
 
-    _init_conditions_param(read_params);
-    _init_load_bf_columns(read_params);
+    _init_conditions_param(read_params); // 根据参数传入的read_params初始化conditions查询条件对象
+    _init_load_bf_columns(read_params);  // 根据参数传入的read_params初始化bloomFilter列集合（eq、in条件，添加了bloomFilter的列）
 
-    OLAPStatus res = _init_delete_condition(read_params); // 根据参数传入的read_params初始化_delete_handler
+    OLAPStatus res = _init_delete_condition(read_params); // 根据参数传入的read_params初始化_delete_handler,包括了tablet中存在的所有删除信息(包含版本和对应的删除条件数组)
     if (res != OLAP_SUCCESS) {
         OLAP_LOG_WARNING("fail to init delete param. [res=%d]", res);
         return res;
@@ -760,9 +760,10 @@ OLAPStatus Reader::_init_keys_param(const ReaderParams& read_params) {
     return OLAP_SUCCESS;
 }
 
+/*根据参数传入的read_params初始化conditions查询条件对象*/
 void Reader::_init_conditions_param(const ReaderParams& read_params) {
     _conditions.set_tablet_schema(&_tablet->tablet_schema());
-    for (const auto& condition : read_params.conditions) {
+    for (const auto& condition : read_params.conditions) { // 依次遍历每一个查询条件
         _conditions.append_condition(condition);
         ColumnPredicate* predicate = _parse_to_predicate(condition);
         if (predicate != nullptr) {

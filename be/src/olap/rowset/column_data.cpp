@@ -24,11 +24,13 @@
 
 namespace doris {
 
+/*根据segment_group创建ColumnData对象，每一个ColumnData对象对应一个segment_group*/
 ColumnData* ColumnData::create(SegmentGroup* segment_group) {
-    ColumnData* data = new(std::nothrow) ColumnData(segment_group);
+    ColumnData* data = new(std::nothrow) ColumnData(segment_group); // 根据segment_group创建ColumnData对象
     return data;
 }
 
+/*构造函数*/
 ColumnData::ColumnData(SegmentGroup* segment_group)
       : _segment_group(segment_group),
         _eof(false),
@@ -46,18 +48,20 @@ ColumnData::ColumnData(SegmentGroup* segment_group)
         // for independent usage, eg: unit test/segment tool
         _lru_cache = FileHandler::get_fd_cache();
     }
-    _num_rows_per_block = _segment_group->get_num_rows_per_row_block();
+    _num_rows_per_block = _segment_group->get_num_rows_per_row_block(); // 获取segment group中每个row block中的数据行数
 }
 
+/*析构函数*/
 ColumnData::~ColumnData() {
-    _segment_group->release();
-    SAFE_DELETE(_segment_reader);
+    _segment_group->release(); // 当前_segment_group的读引用计数减1
+    SAFE_DELETE(_segment_reader); // 释放指针_segment_reader所指向的内存空间
 }
 
+/*初始化当前ColumnData对象*/
 OLAPStatus ColumnData::init() {
-    _segment_group->acquire();
+    _segment_group->acquire(); // 当前_segment_group的读引用计数增1
 
-    auto res = _short_key_cursor.init(_segment_group->short_key_columns());
+    auto res = _short_key_cursor.init(_segment_group->short_key_columns()); // 根据前缀索引列（short_key）初始化成员变量_short_key_cursor
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "key cursor init failed, res:" << res;
         return res;
@@ -491,18 +495,20 @@ OLAPStatus ColumnData::get_first_row_block(RowBlock** row_block) {
     return OLAP_SUCCESS;
 }
 
+/*判断当前ColumnData对象对应的segment group是否被查询条件过滤掉了*/
 bool ColumnData::rowset_pruning_filter() {
-    if (empty() || zero_num_rows()) {
+    if (empty() || zero_num_rows()) { // 当前ColumnData对象对应的segment group中没有数据行
         return true;
     }
 
-    if (!_segment_group->has_zone_maps()) {
+    if (!_segment_group->has_zone_maps()) { // 当前ColumnData对象对应的segment group中没有zone map
         return false;
     }
 
     return _conditions->rowset_pruning_filter(_segment_group->get_zone_maps());
 }
 
+/*判断当前ColumnData对象对应的segment group是否因为delete操作而被过滤掉了*/
 int ColumnData::delete_pruning_filter() {
     if (empty() || zero_num_rows()) {
         // should return DEL_NOT_SATISFIED, because that when creating rollup tablet,
@@ -510,7 +516,7 @@ int ColumnData::delete_pruning_filter() {
         return DEL_NOT_SATISFIED;
     }
 
-    int num_zone_maps = _schema.keys_type() == KeysType::DUP_KEYS ? _schema.num_columns() : _schema.num_key_columns();
+    int num_zone_maps = _schema.keys_type() == KeysType::DUP_KEYS ? _schema.num_columns() : _schema.num_key_columns(); // 获取zone map列的数目，当keys_type为DUP_KEYS时，zone map列的数目为整个schema列的数目，否则，zone map列的数目为schema中key列的数目
     // _segment_group->get_zone_maps().size() < num_zone_maps for a table is schema changed from older version that not support
     // generate zone map for duplicated mode value column, using DEL_PARTIAL_SATISFIED
     if (!_segment_group->has_zone_maps() || _segment_group->get_zone_maps().size() < num_zone_maps)  {
@@ -529,13 +535,13 @@ int ColumnData::delete_pruning_filter() {
     int ret = DEL_PARTIAL_SATISFIED;
     bool del_partial_stastified = false;
     bool del_stastified = false;
-    for (auto& delete_condtion : _delete_handler->get_delete_conditions()) {
+    for (auto& delete_condtion : _delete_handler->get_delete_conditions()) { // 遍历_delete_handler中的每一个delete_condition
         if (delete_condtion.filter_version <= _segment_group->version().first) {
-            continue;
+            continue; // delete_condition的删除版本小于或等于当前_segment_group的起始版本，则该条件下不会删除，继续判断下一个delete_condition
         }
 
         Conditions* del_cond = delete_condtion.del_cond;
-        int del_ret = del_cond->delete_pruning_filter(_segment_group->get_zone_maps());
+        int del_ret = del_cond->delete_pruning_filter(_segment_group->get_zone_maps()); // 通过zone map判断当前segment group是否因为delete操作而被过滤掉了
         if (DEL_SATISFIED == del_ret) {
             del_stastified = true;
             break;
@@ -557,6 +563,7 @@ int ColumnData::delete_pruning_filter() {
     return ret;
 }
 
+/*获取因为delete操作而被删除的行*/
 uint64_t ColumnData::get_filted_rows() {
     return _stats->rows_del_filtered;
 }
