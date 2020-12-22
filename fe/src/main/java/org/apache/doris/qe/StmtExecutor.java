@@ -249,7 +249,7 @@ public class StmtExecutor {
                     try {
                         handleQueryStmt(); //处理当前的sql查询语句
                         if (context.getSessionVariable().isReportSucc()) {
-                            writeProfile(beginTimeInNanoSecond);
+                            writeProfile(beginTimeInNanoSecond); // 如果FE配置参数is_report_success为true，则输出profile
                         }
                         break;
                     } catch (RpcException e) {
@@ -486,7 +486,7 @@ public class StmtExecutor {
                 }
 
                 // create plan
-                planner = new Planner(); // 创建Planner对象
+                planner = new Planner(); // 创建Planner对象来初始化成员变量planner
                 if (parsedStmt instanceof QueryStmt || parsedStmt instanceof InsertStmt) {
                     planner.plan(parsedStmt, analyzer, tQueryOptions); // 根据stmt创建plan fragment，保存在Planner对象的fragments成员变量中
                 } else {

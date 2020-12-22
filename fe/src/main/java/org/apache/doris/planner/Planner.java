@@ -71,9 +71,10 @@ public class Planner {
         return singleNodePlanner.getScanNodes();
     }
 
+    /*根据stmt创建plan fragments，保存在当前Planner对象的List成员变量fragments中，List中的前一个fragment可以消费后一个fragment的输出*/
     public void plan(StatementBase queryStmt, Analyzer analyzer, TQueryOptions queryOptions)
             throws UserException {
-        createPlanFragments(queryStmt, analyzer, queryOptions);
+        createPlanFragments(queryStmt, analyzer, queryOptions); // 根据stmt创建plan fragments
     }
 
     /**
@@ -133,6 +134,7 @@ public class Planner {
      * Create plan fragments for an analyzed statement, given a set of execution options. The fragments are returned in
      * a list such that element i of that list can only consume output of the following fragments j > i.
      */
+    /*根据stmt创建plan fragments，保存在当前Planner对象的List成员变量fragments中，List中的前一个fragment可以消费后一个fragment的输出*/
     public void createPlanFragments(StatementBase statement, Analyzer analyzer, TQueryOptions queryOptions)
             throws UserException {
         QueryStmt queryStmt;
@@ -143,8 +145,8 @@ public class Planner {
         }
 
         plannerContext = new PlannerContext(analyzer, queryStmt, queryOptions, statement);
-        singleNodePlanner = new SingleNodePlanner(plannerContext);
-        PlanNode singleNodePlan = singleNodePlanner.createSingleNodePlan();
+        singleNodePlanner = new SingleNodePlanner(plannerContext);          // 创建singleNodePlanner对象
+        PlanNode singleNodePlan = singleNodePlanner.createSingleNodePlan(); // 生成单节点查询计划
 
         if (statement instanceof InsertStmt) {
             InsertStmt insertStmt = (InsertStmt) statement;
@@ -170,8 +172,8 @@ public class Planner {
                     DataPartition.UNPARTITIONED));
         } else {
             // all select query are unpartitioned.
-            distributedPlanner = new DistributedPlanner(plannerContext);
-            fragments = distributedPlanner.createPlanFragments(singleNodePlan);
+            distributedPlanner = new DistributedPlanner(plannerContext);         // 创建DistributedPlanner对象
+            fragments = distributedPlanner.createPlanFragments(singleNodePlan);  // 生成分布式查询计划
         }
 
         // Optimize the transfer of query statistic when query does't contain limit.
@@ -198,9 +200,9 @@ public class Planner {
         for (PlanFragment fragment : fragments) {
             fragment.finalize(analyzer, !queryOptions.allow_unsupported_formats);
         }
-        Collections.reverse(fragments);
+        Collections.reverse(fragments); // 对List类型的fragments中的元素进行翻转排列
 
-        setOutfileSink(queryStmt);
+        setOutfileSink(queryStmt); // 如果stmt拥有outfile，则设置outfile信息
 
         if (queryStmt instanceof SelectStmt) {
             SelectStmt selectStmt = (SelectStmt) queryStmt;
