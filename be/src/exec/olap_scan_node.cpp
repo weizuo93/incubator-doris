@@ -45,6 +45,7 @@ namespace doris {
 
 #define DS_SUCCESS(x) ((x) >= 0)
 
+// OlapScanNode对象负责本次查询在当前BE节点上的及到的所有tablet的scan操作，每个OlapScanner对象负责其中一个tablet的scan
 OlapScanNode::OlapScanNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs):
         ScanNode(pool, tnode, descs),
         _tuple_id(tnode.olap_scan_node.tuple_id),
@@ -67,6 +68,7 @@ OlapScanNode::OlapScanNode(ObjectPool* pool, const TPlanNode& tnode, const Descr
 OlapScanNode::~OlapScanNode() {
 }
 
+/*初始化OlapScanNode*/
 Status OlapScanNode::init(const TPlanNode& tnode, RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::init(tnode, state));
     _direct_conjunct_size = _conjunct_ctxs.size();
@@ -87,6 +89,7 @@ Status OlapScanNode::init(const TPlanNode& tnode, RuntimeState* state) {
     return Status::OK();
 }
 
+/*初始化当前节点scan的相关计数器和定时器*/
 void OlapScanNode::_init_counter(RuntimeState* state) {
     ADD_TIMER(_runtime_profile, "ShowHintsTime");
 
@@ -280,6 +283,7 @@ Status OlapScanNode::get_next(RuntimeState* state, RowBatch* row_batch, bool* eo
     return _status;
 }
 
+/*更新query操作的统计数据*/
 Status OlapScanNode::collect_query_statistics(QueryStatistics* statistics) {
     RETURN_IF_ERROR(ExecNode::collect_query_statistics(statistics));
     statistics->add_scan_bytes(_read_compressed_counter->value());
@@ -287,6 +291,7 @@ Status OlapScanNode::collect_query_statistics(QueryStatistics* statistics) {
     return Status::OK();
 }
 
+/*关闭OlapScanNode*/
 Status OlapScanNode::close(RuntimeState* state) {
     if (is_closed()) {
         return Status::OK();
@@ -321,7 +326,7 @@ Status OlapScanNode::close(RuntimeState* state) {
 
     // OlapScanNode terminate by exception
     // so that initiative close the Scanner
-    for (auto scanner : _olap_scanners) {
+    for (auto scanner : _olap_scanners) { // 依次遍历每一个OlapScanner对象，执行关闭操作
         scanner->close(state);
     }
 
@@ -343,8 +348,9 @@ Status OlapScanNode::close(RuntimeState* state) {
 //  9: optional string table_name
 //}
 // every doris_scan_range is related with one tablet so that one olap scan node contains multiple tablet
+/*设置scan范围，由PlanFragmentExecutor调用*/
 Status OlapScanNode::set_scan_ranges(const std::vector<TScanRangeParams>& scan_ranges) {
-    for (auto& scan_range : scan_ranges) {
+    for (auto& scan_range : scan_ranges) { // 每一个TScanRangeParams类型的对象都对应一个tablet
         DCHECK(scan_range.scan_range.__isset.palo_scan_range);
         _scan_ranges.emplace_back(new TPaloScanRange(scan_range.scan_range.palo_scan_range));
         COUNTER_UPDATE(_tablet_counter, 1);
@@ -353,6 +359,7 @@ Status OlapScanNode::set_scan_ranges(const std::vector<TScanRangeParams>& scan_r
     return Status::OK();
 }
 
+/*启动扫描*/
 Status OlapScanNode::start_scan(RuntimeState* state) {
     RETURN_IF_CANCELLED(state);
 
@@ -370,16 +377,17 @@ Status OlapScanNode::start_scan(RuntimeState* state) {
 
     VLOG(1) << "StartScanThread";
     // 6. Start multi thread to read serval `Sub Sub ScanRange`
-    RETURN_IF_ERROR(start_scan_thread(state));
+    RETURN_IF_ERROR(start_scan_thread(state)); // 启动scan线程
 
     return Status::OK();
 }
 
+/*标准化conjuncts*/
 Status OlapScanNode::normalize_conjuncts() {
-    std::vector<SlotDescriptor*> slots = _tuple_desc->slots();
+    std::vector<SlotDescriptor*> slots = _tuple_desc->slots(); // tuple表示行，slot表示行中的一个列字段
 
-    for (int slot_idx = 0; slot_idx < slots.size(); ++slot_idx) {
-        switch (slots[slot_idx]->type().type) {
+    for (int slot_idx = 0; slot_idx < slots.size(); ++slot_idx) { // 依次遍历每一个列字段
+        switch (slots[slot_idx]->type().type) { // 获取列字段的类型
             // TYPE_TINYINT use int32_t to present
             // because it's easy to convert to string for build Olap fetch Query
         case TYPE_TINYINT: {
@@ -517,9 +525,10 @@ Status OlapScanNode::build_olap_filters() {
     return Status::OK();
 }
 
+/*构建scan key*/
 Status OlapScanNode::build_scan_key() {
-    const std::vector<std::string>& column_names = _olap_scan_node.key_column_name;
-    const std::vector<TPrimitiveType::type>& column_types = _olap_scan_node.key_column_type;
+    const std::vector<std::string>& column_names = _olap_scan_node.key_column_name;          // 获取列名称
+    const std::vector<TPrimitiveType::type>& column_types = _olap_scan_node.key_column_type; // 获取列类型
     DCHECK(column_types.size() == column_names.size());
 
     // 1. construct scan key except last olap engine short key
@@ -626,7 +635,7 @@ static Status get_hints(
 
 /*启动数据查询线程*/
 Status OlapScanNode::start_scan_thread(RuntimeState* state) {
-    if (_scan_ranges.empty()) {
+    if (_scan_ranges.empty()) { // _scan_ranges中的每一个元素对应一个tablet
         _transfer_done = true;
         return Status::OK();
     }
@@ -683,15 +692,15 @@ Status OlapScanNode::start_scan_thread(RuntimeState* state) {
                 state, this, _olap_scan_node.is_preaggregation, _need_agg_finalize, *scan_range, scanner_ranges);
             // add scanner to pool before doing prepare.
             // so that scanner can be automatically deconstructed if prepare failed.
-            _scanner_pool->add(scanner);
-            RETURN_IF_ERROR(scanner->prepare(*scan_range, scanner_ranges, _olap_filter, _is_null_vector));
+            _scanner_pool->add(scanner); // 将创建的OlapScanner对象添加到对象池_scanner_pool中进行管理
+            RETURN_IF_ERROR(scanner->prepare(*scan_range, scanner_ranges, _olap_filter, _is_null_vector)); // 执行tablet扫描前的准备工作
     
             _olap_scanners.push_back(scanner); //将创建OlapScanner对象添加到成员变量_olap_scanners中
-            disk_set.insert(scanner->scan_disk());
+            disk_set.insert(scanner->scan_disk()); // 获取当前OlapScanner对象对应的tablet所在的磁盘路径，并添加到disk_set中
         }
     }
-    COUNTER_SET(_num_disks_accessed_counter, static_cast<int64_t>(disk_set.size()));
-    COUNTER_SET(_num_scanners, static_cast<int64_t>(_olap_scanners.size()));
+    COUNTER_SET(_num_disks_accessed_counter, static_cast<int64_t>(disk_set.size())); // 更新成员变量_num_disks_accessed_counter的值，表示要访问的磁盘数量
+    COUNTER_SET(_num_scanners, static_cast<int64_t>(_olap_scanners.size())); // 更新成员变量_num_scanners，表示要扫描的tablet的数量，每个tablet对应一个OlapScanner对象
 
     // init progress
     std::stringstream ss;
