@@ -165,8 +165,8 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
 
     // set #senders of exchange nodes before calling Prepare()
     std::vector<ExecNode*> exch_nodes;
-    _plan->collect_nodes(TPlanNodeType::EXCHANGE_NODE, &exch_nodes);
-    BOOST_FOREACH(ExecNode * exch_node, exch_nodes) {
+    _plan->collect_nodes(TPlanNodeType::EXCHANGE_NODE, &exch_nodes); // 获取执行计划中的EXCHANGE_NODE
+    BOOST_FOREACH(ExecNode * exch_node, exch_nodes) { //依次遍历每一个ExecNode
         DCHECK_EQ(exch_node->type(), TPlanNodeType::EXCHANGE_NODE);
         int num_senders = find_with_default(params.per_exch_num_senders, exch_node->id(), 0);
         DCHECK_GT(num_senders, 0);
@@ -178,17 +178,17 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     // set scan ranges
     std::vector<ExecNode*> scan_nodes;
     std::vector<TScanRangeParams> no_scan_ranges;
-    _plan->collect_scan_nodes(&scan_nodes);
+    _plan->collect_scan_nodes(&scan_nodes);  // 获取执行计划中的SCANNode
     VLOG(1) << "scan_nodes.size()=" << scan_nodes.size();
     VLOG(1) << "params.per_node_scan_ranges.size()=" << params.per_node_scan_ranges.size();
 
     _plan->try_do_aggregate_serde_improve();
 
-    for (int i = 0; i < scan_nodes.size(); ++i) {
+    for (int i = 0; i < scan_nodes.size(); ++i) { // 一次遍历每一个scan node，设置scan ranges
         ScanNode* scan_node = static_cast<ScanNode*>(scan_nodes[i]);
         const std::vector<TScanRangeParams>& scan_ranges =
             find_with_default(params.per_node_scan_ranges, scan_node->id(), no_scan_ranges);
-        scan_node->set_scan_ranges(scan_ranges);
+        scan_node->set_scan_ranges(scan_ranges); // 设置scan ranges
         VLOG(1) << "scan_node_Id=" << scan_node->id() << " size=" << scan_ranges.size();
     }
 
@@ -199,13 +199,13 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     if (request.fragment.__isset.output_sink) {
         RETURN_IF_ERROR(DataSink::create_data_sink(obj_pool(),
                         request.fragment.output_sink, request.fragment.output_exprs, params,
-                        row_desc(), &_sink));
-        RETURN_IF_ERROR(_sink->prepare(runtime_state()));
+                        row_desc(), &_sink)); // 创建data sink，保存在成员变量_sink中
+        RETURN_IF_ERROR(_sink->prepare(runtime_state())); // 使用runtime_state()初始化成员变量_sink
 
-        RuntimeProfile* sink_profile = _sink->profile();
+        RuntimeProfile* sink_profile = _sink->profile();  // 获取data sink的profile
 
         if (sink_profile != NULL) {
-            profile()->add_child(sink_profile, true, NULL);
+            profile()->add_child(sink_profile, true, NULL); // 将data sink的profile添加到当前fragment的runtime_profile
         }
 
         _collect_query_statistics_with_every_batch = params.__isset.send_query_statistics_with_every_batch ?
@@ -215,7 +215,7 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     }
 
     // set up profile counters
-    profile()->add_child(_plan->runtime_profile(), true, NULL);
+    profile()->add_child(_plan->runtime_profile(), true, NULL); // 将执行计划的profile添加到当前fragment的runtime_profile
     _rows_produced_counter = ADD_COUNTER(profile(), "RowsProduced", TUnit::UNIT);
 
     _row_batch.reset(new RowBatch(
@@ -276,7 +276,7 @@ Status PlanFragmentExecutor::open_internal() {
     RowBatch* batch = NULL;
 
     while (true) {
-        RETURN_IF_ERROR(get_next_internal(&batch));
+        RETURN_IF_ERROR(get_next_internal(&batch)); // 获取一个batch的数据
 
         if (batch == NULL) {
             break;
@@ -297,7 +297,7 @@ Status PlanFragmentExecutor::open_internal() {
         if (_collect_query_statistics_with_every_batch) {
             collect_query_statistics();
         }
-        RETURN_IF_ERROR(_sink->send(runtime_state(), batch));
+        RETURN_IF_ERROR(_sink->send(runtime_state(), batch)); // 通过data sink将当前batch的数据发送出去
     }
 
     // Close the sink *before* stopping the report thread. Close may
@@ -313,13 +313,13 @@ Status PlanFragmentExecutor::open_internal() {
     // audit the sinks to check that this is ok, or change that behaviour.
     {
         SCOPED_TIMER(profile()->total_time_counter());
-        collect_query_statistics();
+        collect_query_statistics(); // 收集query的统计数据
         Status status;
         {
             boost::lock_guard<boost::mutex> l(_status_lock);
             status = _status;
         }
-        status = _sink->close(runtime_state(), status);
+        status = _sink->close(runtime_state(), status); // 关闭data sink
         RETURN_IF_ERROR(status);
     }
 
@@ -464,7 +464,7 @@ Status PlanFragmentExecutor::get_next_internal(RowBatch** batch) {
     while (!_done) {
         _row_batch->reset();
         SCOPED_TIMER(profile()->total_time_counter());
-        RETURN_IF_ERROR(_plan->get_next(_runtime_state.get(), _row_batch.get(), &_done));
+        RETURN_IF_ERROR(_plan->get_next(_runtime_state.get(), _row_batch.get(), &_done)); // 获取一个batch的数据
 
         if (_row_batch->num_rows() > 0) {
             COUNTER_UPDATE(_rows_produced_counter, _row_batch->num_rows());

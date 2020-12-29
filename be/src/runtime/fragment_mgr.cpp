@@ -204,6 +204,7 @@ static void register_cgroups(const std::string& user, const std::string& group) 
     CgroupsMgr::apply_cgroup(new_info->user, new_info->group);
 }
 
+/*执行fragment计划*/
 Status FragmentExecState::execute() {
     int64_t duration_ns = 0;
     {
@@ -215,8 +216,8 @@ Status FragmentExecState::execute() {
         }
 
         WARN_IF_ERROR(_executor.open(), strings::Substitute("Got error while opening fragment $0",
-                                                            print_id(_fragment_instance_id)));
-        _executor.close();
+                                                            print_id(_fragment_instance_id))); // 打开fragment
+        _executor.close(); // 执行结束，关闭fragment
     }
     DorisMetrics::instance()->fragment_requests_total.increment(1);
     DorisMetrics::instance()->fragment_request_duration_us.increment(duration_ns / 1000);
@@ -411,10 +412,11 @@ FragmentMgr::~FragmentMgr() {
 static void empty_function(PlanFragmentExecutor* exec) {
 }
 
+/*执行fragment计划*/
 void FragmentMgr::exec_actual(
         std::shared_ptr<FragmentExecState> exec_state,
         FinishCallback cb) {
-    exec_state->execute();
+    exec_state->execute(); // 执行fragment计划
 
     {
         std::lock_guard<std::mutex> lock(_lock);
@@ -432,11 +434,13 @@ void FragmentMgr::exec_actual(
     // NOTE: 'exec_state' is desconstructed here without lock
 }
 
+/*执行fragment计划*/
 Status FragmentMgr::exec_plan_fragment(
         const TExecPlanFragmentParams& params) {
     return exec_plan_fragment(params, std::bind<void>(&empty_function, std::placeholders::_1));
 }
 
+/*执行fragment计划*/
 Status FragmentMgr::exec_plan_fragment(
         const TExecPlanFragmentParams& params,
         FinishCallback cb) {
@@ -456,7 +460,7 @@ Status FragmentMgr::exec_plan_fragment(
             params.backend_num,
             _exec_env,
             params.coord));
-    RETURN_IF_ERROR(exec_state->prepare(params));
+    RETURN_IF_ERROR(exec_state->prepare(params)); // 通过参数params对fragment的执行状态进行初始化
 
     {
         std::lock_guard<std::mutex> lock(_lock);
@@ -466,18 +470,18 @@ Status FragmentMgr::exec_plan_fragment(
             return Status::InternalError("Double execute");
         }
         // register exec_state before starting exec thread
-        _fragment_map.insert(std::make_pair(fragment_instance_id, exec_state));
+        _fragment_map.insert(std::make_pair(fragment_instance_id, exec_state)); // 将fragment_instance_id添加到成员变量_fragment_map中进行管理
     }
 
     auto st = _thread_pool->submit_func(
-            std::bind<void>(&FragmentMgr::exec_actual, this, exec_state, cb));
+            std::bind<void>(&FragmentMgr::exec_actual, this, exec_state, cb)); // 将fragment计划提交到线程池
     if (!st.ok()) {
         {
             // Remove the exec state added
             std::lock_guard<std::mutex> lock(_lock);
-            _fragment_map.erase(fragment_instance_id);
+            _fragment_map.erase(fragment_instance_id); // 将fragment_instance_id从成员变量_fragment_map中删除
         }
-        exec_state->cancel_before_execute();
+        exec_state->cancel_before_execute(); // 取消之前的执行计划
         return Status::InternalError(strings::Substitute(
                 "Put planfragment to thread pool failed. err = $0", st.get_error_msg()));
     }
@@ -485,6 +489,7 @@ Status FragmentMgr::exec_plan_fragment(
     return Status::OK();
 }
 
+/*取消fragment的执行计划*/
 Status FragmentMgr::cancel(const TUniqueId& id, const PPlanFragmentCancelReason& reason) {
     std::shared_ptr<FragmentExecState> exec_state;
     {
@@ -496,11 +501,12 @@ Status FragmentMgr::cancel(const TUniqueId& id, const PPlanFragmentCancelReason&
         }
         exec_state = iter->second;
     }
-    exec_state->cancel(reason);
+    exec_state->cancel(reason); // 取消fragment的执行计划
 
     return Status::OK();
 }
 
+/*cancel所有fragment*/
 void FragmentMgr::cancel_worker() {
     LOG(INFO) << "FragmentMgr cancel worker start working.";
     while (!_stop) {
@@ -508,14 +514,14 @@ void FragmentMgr::cancel_worker() {
         DateTimeValue now = DateTimeValue::local_time();
         {
             std::lock_guard<std::mutex> lock(_lock);
-            for (auto& it : _fragment_map) {
+            for (auto& it : _fragment_map) {    // 遍历成员变量_fragment_map中的所有fragment
                 if (it.second->is_timeout(now)) {
                     to_delete.push_back(it.second->fragment_instance_id());
                 }
             }
         }
         for (auto& id : to_delete) {
-            cancel(id, PPlanFragmentCancelReason::TIMEOUT);
+            cancel(id, PPlanFragmentCancelReason::TIMEOUT); // 依次取消所有fragment
             LOG(INFO) << "FragmentMgr cancel worker going to cancel timouet fragment " << print_id(id);
         }
 
@@ -525,16 +531,17 @@ void FragmentMgr::cancel_worker() {
     LOG(INFO) << "FragmentMgr cancel worker is going to exit.";
 }
 
+/*触发汇报profile*/
 Status FragmentMgr::trigger_profile_report(const PTriggerProfileReportRequest* request) {
     if (request->instance_ids_size() > 0) {
-        for (int i = 0; i < request->instance_ids_size(); i++) {
+        for (int i = 0; i < request->instance_ids_size(); i++) { // 遍历参数request中携带的所有fragment id信息
             const PUniqueId& p_fragment_id = request->instance_ids(i);
             TUniqueId id;
             id.__set_hi(p_fragment_id.hi());
             id.__set_lo(p_fragment_id.lo());
             {
                 std::lock_guard<std::mutex> lock(_lock);
-                auto iter = _fragment_map.find(id);
+                auto iter = _fragment_map.find(id); // 如果当前id在成员变量_fragment_map中存在，则汇报当前的profile
                 if (iter != _fragment_map.end()) {
                     iter->second->executor()->report_profile_once();
                 }
@@ -543,7 +550,7 @@ Status FragmentMgr::trigger_profile_report(const PTriggerProfileReportRequest* r
     } else {
         std::lock_guard<std::mutex> lock(_lock);
         auto iter = _fragment_map.begin();
-        for (; iter != _fragment_map.end(); iter++) {
+        for (; iter != _fragment_map.end(); iter++) { // 依次遍历成员变量_fragment_map中的所有fragment，并汇报profile信息
             iter->second->executor()->report_profile_once();
         }
     }

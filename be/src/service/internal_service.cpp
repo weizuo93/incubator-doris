@@ -73,6 +73,7 @@ void PInternalServiceImpl<T>::tablet_writer_open(google::protobuf::RpcController
     st.to_protobuf(response->mutable_status());
 }
 
+/*执行一个查询计划的fragment*/
 template<typename T>
 void PInternalServiceImpl<T>::exec_plan_fragment(
         google::protobuf::RpcController* cntl_base,
@@ -81,7 +82,7 @@ void PInternalServiceImpl<T>::exec_plan_fragment(
         google::protobuf::Closure* done) {
     brpc::ClosureGuard closure_guard(done);
     brpc::Controller* cntl = static_cast<brpc::Controller*>(cntl_base);
-    auto st = _exec_plan_fragment(cntl);
+    auto st = _exec_plan_fragment(cntl); // 执行fragment
     if (!st.ok()) {
         LOG(WARNING) << "exec plan fragment failed, errmsg=" << st.get_error_msg();
     }
@@ -138,6 +139,7 @@ void PInternalServiceImpl<T>::tablet_writer_cancel(google::protobuf::RpcControll
     }
 }
 
+/*执行fragment计划*/
 template<typename T>
 Status PInternalServiceImpl<T>::_exec_plan_fragment(brpc::Controller* cntl) {
     auto ser_request = cntl->request_attachment().to_string();
@@ -149,7 +151,7 @@ Status PInternalServiceImpl<T>::_exec_plan_fragment(brpc::Controller* cntl) {
     }
     LOG(INFO) << "exec plan fragment, fragment_instance_id=" << print_id(t_request.params.fragment_instance_id)
         << ", coord=" << t_request.coord << ", backend=" << t_request.backend_num;
-    return _exec_env->fragment_mgr()->exec_plan_fragment(t_request);
+    return _exec_env->fragment_mgr()->exec_plan_fragment(t_request); // 通过FragmentMgr对象执行一个fragment计划
 }
 
 template<typename T>
