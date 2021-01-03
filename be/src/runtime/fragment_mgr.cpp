@@ -69,14 +69,15 @@ using apache::thrift::transport::TTransportException;
 
 class RuntimeProfile;
 
+/*每一个FragmentExecState对象对应分配在当前节点上的一个fragment*/
 class FragmentExecState {
 public:
     FragmentExecState(
-        const TUniqueId& query_id,
-        const TUniqueId& instance_id,
+        const TUniqueId& query_id,    // query_id
+        const TUniqueId& instance_id, // instance_id
         int backend_num,
         ExecEnv* exec_env,
-        const TNetworkAddress& coord_hostport);
+        const TNetworkAddress& coord_hostport); // coordinator的地址
 
     ~FragmentExecState();
 
@@ -106,6 +107,7 @@ public:
     }
 
     // Update status of this fragment execute
+    /*更新fragment的执行状态*/
     Status update_status(Status status) {
         std::lock_guard<std::mutex> l(_status_lock);
         if (!status.ok() && _exec_status.ok()) {
@@ -180,6 +182,7 @@ FragmentExecState::FragmentExecState(
 FragmentExecState::~FragmentExecState() {
 }
 
+/*fragment执行之前的准备工作*/
 Status FragmentExecState::prepare(const TExecPlanFragmentParams& params) {
     if (params.__isset.query_options) {
         _timeout_second = params.query_options.query_timeout;
@@ -192,6 +195,7 @@ Status FragmentExecState::prepare(const TExecPlanFragmentParams& params) {
     return _executor.prepare(params);
 }
 
+/*注册cgroup*/
 static void register_cgroups(const std::string& user, const std::string& group) {
     TResourceInfo* new_info = new TResourceInfo();
     new_info->user = user;
@@ -231,6 +235,7 @@ Status FragmentExecState::cancel_before_execute() {
     return Status::OK();
 }
 
+/*取消fragment的执行*/
 Status FragmentExecState::cancel(const PPlanFragmentCancelReason& reason) {
     std::lock_guard<std::mutex> l(_status_lock);
     RETURN_IF_ERROR(_exec_status);
