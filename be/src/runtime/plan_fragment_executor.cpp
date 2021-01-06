@@ -72,6 +72,7 @@ PlanFragmentExecutor::~PlanFragmentExecutor() {
     }
 }
 
+/*fragment执行之前的准备工作，其中包含创建Node Tree*/
 Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     const TPlanFragmentExecParams& params = request.params;
     _query_id = params.query_id;
@@ -151,6 +152,7 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
 
     // set up plan
     DCHECK(request.__isset.fragment);
+    // 根据fragment的plan创建fragment的tree结构（其中会创建不同的节点，比如：OLAP_SCAN_NODE），根节点会通过参数_plan传回，并保存在成员变量_plan中，供整个类使用
     RETURN_IF_ERROR(
             ExecNode::create_tree(_runtime_state.get(), obj_pool(), request.fragment.plan, *desc_tbl, &_plan));
     _runtime_state->set_fragment_root_id(_plan->id());
@@ -165,30 +167,30 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
 
     // set #senders of exchange nodes before calling Prepare()
     std::vector<ExecNode*> exch_nodes;
-    _plan->collect_nodes(TPlanNodeType::EXCHANGE_NODE, &exch_nodes); // 获取执行计划中的EXCHANGE_NODE
-    BOOST_FOREACH(ExecNode * exch_node, exch_nodes) { //依次遍历每一个ExecNode
+    _plan->collect_nodes(TPlanNodeType::EXCHANGE_NODE, &exch_nodes); // 收集执行计划中的所有交换节点
+    BOOST_FOREACH(ExecNode * exch_node, exch_nodes) {         // 依次遍历每一个交换节点
         DCHECK_EQ(exch_node->type(), TPlanNodeType::EXCHANGE_NODE);
-        int num_senders = find_with_default(params.per_exch_num_senders, exch_node->id(), 0);
+        int num_senders = find_with_default(params.per_exch_num_senders, exch_node->id(), 0); // 如果以exch_node->id()为key的KV对在map类型的params.per_exch_num_senders中存在，则返回对应的value；如果不存在，则返回默认值0.
         DCHECK_GT(num_senders, 0);
         static_cast<ExchangeNode*>(exch_node)->set_num_senders(num_senders);
     }
 
  
-    RETURN_IF_ERROR(_plan->prepare(_runtime_state.get()));
+    RETURN_IF_ERROR(_plan->prepare(_runtime_state.get())); // 对根Node执行prepare操作（此时会调用根节点对应的Node对象的prepare()函数）
     // set scan ranges
     std::vector<ExecNode*> scan_nodes;
     std::vector<TScanRangeParams> no_scan_ranges;
-    _plan->collect_scan_nodes(&scan_nodes);  // 获取执行计划中的SCANNode
+    _plan->collect_scan_nodes(&scan_nodes);  // 收集执行计划中的所有scan节点，通过vector类型的参数scan_nodes传回
     VLOG(1) << "scan_nodes.size()=" << scan_nodes.size();
     VLOG(1) << "params.per_node_scan_ranges.size()=" << params.per_node_scan_ranges.size();
 
-    _plan->try_do_aggregate_serde_improve();
+    _plan->try_do_aggregate_serde_improve(); // 尝试进行聚合操作的优化
 
-    for (int i = 0; i < scan_nodes.size(); ++i) { // 一次遍历每一个scan node，设置scan ranges
+    for (int i = 0; i < scan_nodes.size(); ++i) { // 依次遍历每一个scan node，设置scan ranges
         ScanNode* scan_node = static_cast<ScanNode*>(scan_nodes[i]);
         const std::vector<TScanRangeParams>& scan_ranges =
-            find_with_default(params.per_node_scan_ranges, scan_node->id(), no_scan_ranges);
-        scan_node->set_scan_ranges(scan_ranges); // 设置scan ranges
+            find_with_default(params.per_node_scan_ranges, scan_node->id(), no_scan_ranges); // 获取params获取当前scan node的scan ranges。如果以scan_node->id()为key的KV对在map类型的params.per_node_scan_ranges中存在，则返回对应的value；如果不存在，则返回默认值no_scan_ranges。
+        scan_node->set_scan_ranges(scan_ranges); // 为当前scan node设置scan ranges
         VLOG(1) << "scan_node_Id=" << scan_node->id() << " size=" << scan_ranges.size();
     }
 
@@ -196,41 +198,43 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     _runtime_state->set_num_per_fragment_instances(params.num_senders);
 
     // set up sink, if required
+    // 判断是否需要数据发送，是否需要创建DataSink（包括DataStreamSender、OlapTableSink等）
     if (request.fragment.__isset.output_sink) {
         RETURN_IF_ERROR(DataSink::create_data_sink(obj_pool(),
                         request.fragment.output_sink, request.fragment.output_exprs, params,
-                        row_desc(), &_sink)); // 创建data sink，保存在成员变量_sink中
-        RETURN_IF_ERROR(_sink->prepare(runtime_state())); // 使用runtime_state()初始化成员变量_sink
+                        row_desc(), &_sink)); // 根据request.fragment.output_sink的类型创建对应的DataSink对象，通过在成员变量_sink传回，比如：创建DataStreamSender对象、OlapTableSink对象等
+        RETURN_IF_ERROR(_sink->prepare(runtime_state())); // 根据_sink类型不同，调用对应类的prepare()函数
 
-        RuntimeProfile* sink_profile = _sink->profile();  // 获取data sink的profile
+        RuntimeProfile* sink_profile = _sink->profile();  // 获取DataSink的profile
 
         if (sink_profile != NULL) {
-            profile()->add_child(sink_profile, true, NULL); // 将data sink的profile添加到当前fragment的runtime_profile
+            profile()->add_child(sink_profile, true, NULL); // 添加DataSink的profile作为当前fragment的profile的子节点
         }
 
         _collect_query_statistics_with_every_batch = params.__isset.send_query_statistics_with_every_batch ?
-            params.send_query_statistics_with_every_batch : false;
+            params.send_query_statistics_with_every_batch : false; // 设置是否需要发送每一个batch的query数据
     } else {
         _sink.reset(NULL);
     }
 
     // set up profile counters
-    profile()->add_child(_plan->runtime_profile(), true, NULL); // 将执行计划的profile添加到当前fragment的runtime_profile
-    _rows_produced_counter = ADD_COUNTER(profile(), "RowsProduced", TUnit::UNIT);
+    profile()->add_child(_plan->runtime_profile(), true, NULL); // 添加_plan（执行节点的根Node）的profile作为当前fragment的profile的子节点
+    _rows_produced_counter = ADD_COUNTER(profile(), "RowsProduced", TUnit::UNIT); // 为当前fragment的profile增加一个名称为"RowsProduced"的Counter
 
     _row_batch.reset(new RowBatch(
             _plan->row_desc(),
             _runtime_state->batch_size(),
-            _runtime_state->instance_mem_tracker()));
+            _runtime_state->instance_mem_tracker())); // 创建RowBatch对象，并初始化成员变量_row_batch
     // _row_batch->tuple_data_pool()->set_limits(*_runtime_state->mem_trackers());
     VLOG(3) << "plan_root=\n" << _plan->debug_string();
     _prepared = true;
 
-    _query_statistics.reset(new QueryStatistics());
-    _sink->set_query_statistics(_query_statistics);
+    _query_statistics.reset(new QueryStatistics()); // 创建QueryStatistics对象，并初始化成员变量_query_statistics
+    _sink->set_query_statistics(_query_statistics); // 设置DataSink的query到的数据信息（包括scan_rows和scan_bytes）
     return Status::OK();
 }
 
+/*打开fragment*/
 Status PlanFragmentExecutor::open() {
     LOG(INFO) << "Open(): fragment_instance_id=" << print_id(_runtime_state->fragment_instance_id());
 
@@ -247,7 +251,7 @@ Status PlanFragmentExecutor::open() {
         _report_thread_active = true;
     }
 
-    Status status = open_internal();
+    Status status = open_internal(); // 打开fragment
 
     if (!status.ok() && !status.is_cancelled() && _runtime_state->log_has_space()) {
         // Log error message in addition to returning in Status. Queries that do not
@@ -256,7 +260,7 @@ Status PlanFragmentExecutor::open() {
         _runtime_state->log_error(status.get_error_msg());
     }
 
-    update_status(status);
+    update_status(status); // 根据status更新fragment执行器的状态
     return status;
 }
 
@@ -478,6 +482,7 @@ Status PlanFragmentExecutor::get_next_internal(RowBatch** batch) {
     return Status::OK();
 }
 
+/*根据参数传入的status更新fragment executor的状态*/
 void PlanFragmentExecutor::update_status(const Status& new_status) {
     if (new_status.ok()) {
         return;
@@ -490,7 +495,7 @@ void PlanFragmentExecutor::update_status(const Status& new_status) {
             if (new_status.is_mem_limit_exceeded()) {
                 _runtime_state->set_mem_limit_exceeded(new_status.get_error_msg());
             }
-            _status = new_status;
+            _status = new_status; // 根据参数传入的status更新成员变量_status
             if (_runtime_state->query_options().query_type == TQueryType::EXTERNAL) {
                 TUniqueId fragment_instance_id = _runtime_state->fragment_instance_id();
                 _exec_env->result_queue_mgr()->update_queue_status(fragment_instance_id, new_status);

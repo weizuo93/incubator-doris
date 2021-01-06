@@ -270,15 +270,16 @@ void ExecNode::add_runtime_exec_option(const std::string& str) {
     runtime_profile()->add_info_string("ExecOption", _runtime_exec_options);
 }
 
+/*根据fragment的plan创建fragment的tree结构，其中会创建不同的节点（比如：OLAP_SCAN_NODE）*/
 Status ExecNode::create_tree(RuntimeState* state, ObjectPool* pool, const TPlan& plan,
                             const DescriptorTbl& descs, ExecNode** root) {
-    if (plan.nodes.size() == 0) {
+    if (plan.nodes.size() == 0) { // 类TPlan会根据Thrift在gensrc/build/gen_cpp/目录下生成的PlanNodes_types.h文件中定义，其中成员变量nodes的类型为std::vector<TPlanNode>
         *root = NULL;
         return Status::OK();
     }
 
     int node_idx = 0;
-    RETURN_IF_ERROR(create_tree_helper(state, pool, plan.nodes, descs, NULL, &node_idx, root));
+    RETURN_IF_ERROR(create_tree_helper(state, pool, plan.nodes, descs, NULL, &node_idx, root)); // 根据plan.nodes创建fragment的tree结构（parent为NULL，因此root返回根节点）
 
     if (node_idx + 1 != plan.nodes.size()) {
         // TODO: print thrift msg for diagnostic purposes.
@@ -289,6 +290,7 @@ Status ExecNode::create_tree(RuntimeState* state, ObjectPool* pool, const TPlan&
     return Status::OK();
 }
 
+/*根据fragment的plan中的nodes创建fragment的tree结构，tree是由不同的node构成*/
 Status ExecNode::create_tree_helper(
     RuntimeState* state,
     ObjectPool* pool,
@@ -306,18 +308,18 @@ Status ExecNode::create_tree_helper(
 
     int num_children = tnodes[*node_idx].num_children;
     ExecNode* node = NULL;
-    RETURN_IF_ERROR(create_node(state, pool, tnodes[*node_idx], descs, &node));
+    RETURN_IF_ERROR(create_node(state, pool, tnodes[*node_idx], descs, &node)); // 根据Node类型创建一个Node（此处创建当前层次的第一个Node，即root Node），通过参数node传回
 
     // assert(parent != NULL || (node_idx == 0 && root_expr != NULL));
-    if (parent != NULL) {
+    if (parent != NULL) { // 一个Node下的所有子Node都保存在Node对象的vector<ExecNode*>类型的成员变量_children中
         parent->_children.push_back(node);
     } else {
-        *root = node;
+        *root = node; // 获取当前fragment中所有的执行节点（这些执行节点都是ExecNode类的子类对象，包括OLAP_SCAN_NODE、HASH_JOIN_NODE、AGGREGATION_NODE、EXCHANGE_NODE等）的根Node
     }
 
     for (int i = 0; i < num_children; i++) {
         ++*node_idx;
-        RETURN_IF_ERROR(create_tree_helper(state, pool, tnodes, descs, node, node_idx, NULL));
+        RETURN_IF_ERROR(create_tree_helper(state, pool, tnodes, descs, node, node_idx, NULL)); // 依次递归地创建其他的Node，前面创建的node为新节点的parent
 
         // we are expecting a child, but have used all nodes
         // this means we have been given a bad tree and must fail
@@ -342,6 +344,7 @@ Status ExecNode::create_tree_helper(
     return Status::OK();
 }
 
+/*根据Node的类型创建一个特定Node对象，比如：创建一个OlapScanNode对象、HASH_JOIN_NODE对象或AGGREGATION_NODE对象*/
 Status ExecNode::create_node(RuntimeState* state, ObjectPool* pool, const TPlanNode& tnode,
                             const DescriptorTbl& descs, ExecNode** node) {
     std::stringstream error_msg;
@@ -513,40 +516,43 @@ bool ExecNode::eval_conjuncts(ExprContext* const* ctxs, int num_ctxs, TupleRow* 
     return true;
 }
 
+/*获取以当前Node对象为root的Node tree中类型为node_type的所有Node(包含当前节点)，通过vector类型的参数nodes传回*/
 void ExecNode::collect_nodes(TPlanNodeType::type node_type, vector<ExecNode*>* nodes) {
-    if (_type == node_type) {
+    if (_type == node_type) { // 如果当前Node对象的类型与需要收集的Node类型一致，则把当前Node对象添加到nodes中
         nodes->push_back(this);
     }
 
-    for (int i = 0; i < _children.size(); ++i) {
+    for (int i = 0; i < _children.size(); ++i) {      // 遍历当前Node对象的所有child Node对象
         _children[i]->collect_nodes(node_type, nodes);
     }
 }
 
+/*获取以当前Node对象为root的Node tree中所有的scan node(包含当前节点)，通过vector类型的参数nodes传回*/
 void ExecNode::collect_scan_nodes(vector<ExecNode*>* nodes) {
-    collect_nodes(TPlanNodeType::OLAP_SCAN_NODE, nodes);
-    collect_nodes(TPlanNodeType::BROKER_SCAN_NODE, nodes);
-    collect_nodes(TPlanNodeType::ES_SCAN_NODE, nodes);
-    collect_nodes(TPlanNodeType::ES_HTTP_SCAN_NODE, nodes);
+    collect_nodes(TPlanNodeType::OLAP_SCAN_NODE, nodes);   // OlapScanNode是ScanNode的子类
+    collect_nodes(TPlanNodeType::BROKER_SCAN_NODE, nodes); // BrokerScanNode是ScanNode的子类
+    collect_nodes(TPlanNodeType::ES_SCAN_NODE, nodes);     // EsScanNode是ScanNode的子类
+    collect_nodes(TPlanNodeType::ES_HTTP_SCAN_NODE, nodes);// EsHttpScanNode是ScanNode的子类
 }
 
+/*尝试进行聚合操作的优化*/
 void ExecNode::try_do_aggregate_serde_improve() {
     std::vector<ExecNode*> agg_node;
-    collect_nodes(TPlanNodeType::AGGREGATION_NODE, &agg_node);
-    if (agg_node.size() != 1) {
+    collect_nodes(TPlanNodeType::AGGREGATION_NODE, &agg_node); // 获取以当前Node对象为root的Node tree中所有的aggregation node(包含当前节点)
+    if (agg_node.size() != 1) { // 如果aggregation node的个数不为1，则返回
         return;
     }
 
-    if (agg_node[0]->_children.size() != 1) {
+    if (agg_node[0]->_children.size() != 1) { // 如果aggregation node的子节点个数不为1，则返回
         return;
     }
 
-    if (agg_node[0]->_children[0]->type() != TPlanNodeType::OLAP_SCAN_NODE) {
+    if (agg_node[0]->_children[0]->type() != TPlanNodeType::OLAP_SCAN_NODE) { // 如果aggregation node的子节点类型不是OlapScanNode，则返回
         return;
     }
 
-    OlapScanNode* scan_node = static_cast<OlapScanNode*>(agg_node[0]->_children[0]);
-    scan_node->set_no_agg_finalize();
+    OlapScanNode* scan_node = static_cast<OlapScanNode*>(agg_node[0]->_children[0]); // 获取类型为OlapScanNode的aggregation node的子节点
+    scan_node->set_no_agg_finalize(); // 设置aggregation node的OlapScanNode类型的子节点不做聚合操作，因为aggregation node中会做聚合操作
 }
 
 void ExecNode::init_runtime_profile(const std::string& name) {
