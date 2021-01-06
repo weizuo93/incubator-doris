@@ -267,7 +267,7 @@ Status PlanFragmentExecutor::open() {
 Status PlanFragmentExecutor::open_internal() {
     {
         SCOPED_TIMER(profile()->total_time_counter());
-        RETURN_IF_ERROR(_plan->open(_runtime_state.get()));
+        RETURN_IF_ERROR(_plan->open(_runtime_state.get())); // 打开节点
     }
 
     if (_sink.get() == NULL) {

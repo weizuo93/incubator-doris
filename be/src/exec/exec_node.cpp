@@ -304,9 +304,9 @@ Status ExecNode::create_tree_helper(
         // TODO: print thrift msg
         return Status::InternalError("Failed to reconstruct plan tree from thrift.");
     }
-    const TPlanNode& tnode = tnodes[*node_idx];
+    const TPlanNode& tnode = tnodes[*node_idx]; // 获取一个TPlanNode对象，获取第一个TPlanNode对象时，*node_idx值为0，获取到的是root node，即PlanFragmentExecutor中的_plan
 
-    int num_children = tnodes[*node_idx].num_children;
+    int num_children = tnodes[*node_idx].num_children; // 获取tnodes[*node_idx]的子节点个数
     ExecNode* node = NULL;
     RETURN_IF_ERROR(create_node(state, pool, tnodes[*node_idx], descs, &node)); // 根据Node类型创建一个Node（此处创建当前层次的第一个Node，即root Node），通过参数node传回
 
@@ -329,16 +329,16 @@ Status ExecNode::create_tree_helper(
         }
     }
 
-    RETURN_IF_ERROR(node->init(tnode, state));
+    RETURN_IF_ERROR(node->init(tnode, state)); // 初始化Node
 
     // build up tree of profiles; add children >0 first, so that when we print
     // the profile, child 0 is printed last (makes the output more readable)
     for (int i = 1; i < node->_children.size(); ++i) {
-        node->runtime_profile()->add_child(node->_children[i]->runtime_profile(), true, NULL);
+        node->runtime_profile()->add_child(node->_children[i]->runtime_profile(), true, NULL); // 依次将当前节点的每一个子节点（第0个除外）的profile添加到当前节点的profile
     }
 
     if (!node->_children.empty()) {
-        node->runtime_profile()->add_child(node->_children[0]->runtime_profile(), true, NULL);
+        node->runtime_profile()->add_child(node->_children[0]->runtime_profile(), true, NULL); // 将当前节点的每0个子节点的profile添加到当前节点的profile
     }
 
     return Status::OK();
