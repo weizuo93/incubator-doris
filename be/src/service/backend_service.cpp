@@ -69,7 +69,7 @@ using apache::thrift::concurrency::PosixThreadFactory;
 
 BackendService::BackendService(ExecEnv* exec_env) :
         _exec_env(exec_env),
-        _agent_server(new AgentServer(exec_env, *exec_env->master_info())) {
+        _agent_server(new AgentServer(exec_env, *exec_env->master_info())) { // 创建AgentServer对象，启动所有的task worker
     char buf[64];
     DateTimeValue value = DateTimeValue::local_time();
     value.to_string(buf);

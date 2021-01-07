@@ -91,6 +91,7 @@ TaskWorkerPool::TaskWorkerPool(const TaskWorkerType task_worker_type, ExecEnv* e
 
 TaskWorkerPool::~TaskWorkerPool() {}
 
+/*启动当前任务类型的所有worker*/
 void TaskWorkerPool::start() {
     // Init task pool and task workers
     switch (_task_worker_type) {
@@ -120,13 +121,13 @@ void TaskWorkerPool::start() {
         _worker_count = config::delete_worker_count;
         _callback_function = _push_worker_thread_callback;
         break;
-    case TaskWorkerType::ALTER_TABLE:
-        _worker_count = config::alter_tablet_worker_count;
-        _callback_function = _alter_tablet_worker_thread_callback;
+    case TaskWorkerType::ALTER_TABLE:                              // 启动的worker类型为alter table
+        _worker_count = config::alter_tablet_worker_count;         // 通过config文件获取alter table worker的数目
+        _callback_function = _alter_tablet_worker_thread_callback; // 获取alter table任务的回调函数
         break;
-    case TaskWorkerType::CLONE:                                 // 启动的worker类型为clone
-        _worker_count = config::clone_worker_count;             // 通过config文件获取clone worker的数目
-        _callback_function = _clone_worker_thread_callback;     // 获取clone线程的回调函数
+    case TaskWorkerType::CLONE:                                    // 启动的worker类型为clone
+        _worker_count = config::clone_worker_count;                // 通过config文件获取clone worker的数目
+        _callback_function = _clone_worker_thread_callback;        // 获取alter table任务的回调函数
         break;
     case TaskWorkerType::STORAGE_MEDIUM_MIGRATE:
         _worker_count = config::storage_medium_migrate_count;
@@ -183,48 +184,55 @@ void TaskWorkerPool::start() {
 
 #ifndef BE_TEST
     for (uint32_t i = 0; i < _worker_count; i++) {
-        _spawn_callback_worker_thread(_callback_function);
+        _spawn_callback_worker_thread(_callback_function); // 依次创建并启动当前任务类型的所有worker
     }
 #endif
 }
 
+/*提交任务*/
 void TaskWorkerPool::submit_task(const TAgentTaskRequest& task) {
-    const TTaskType::type task_type = task.task_type;
-    int64_t signature = task.signature;
+    const TTaskType::type task_type = task.task_type; // 获取任务类型
+    int64_t signature = task.signature;               // 获取任务签名
 
     std::string type_str;
-    EnumToString(TTaskType, task_type, type_str);
+    EnumToString(TTaskType, task_type, type_str);  // 获取task_type对应的字符串名称
     LOG(INFO) << "submitting task. type=" << type_str << ", signature=" << signature;
 
-    if (_register_task_info(task_type, signature)) {
+    if (_register_task_info(task_type, signature)) { // 注册task签名
         // Set the receiving time of task so that we can determine whether it is timed out later
         (const_cast<TAgentTaskRequest&>(task)).__set_recv_time(time(nullptr));
         size_t task_count_in_queue = 0;
         {
             lock_guard<Mutex> worker_thread_lock(_worker_thread_lock);
-            _tasks.push_back(task);
-            task_count_in_queue = _tasks.size();
-            _worker_thread_condition_variable.notify_one();
+            _tasks.push_back(task);                             // 将当前task提交到队列_tasks中进行等待
+            task_count_in_queue = _tasks.size();                // 获取当前队列中等待的任务数量
+            _worker_thread_condition_variable.notify_one();     // 唤醒一个该task类型的休眠worker
         }
         LOG(INFO) << "success to submit task. type=" << type_str << ", signature=" << signature
                   << ", task_count_in_queue=" << task_count_in_queue;
     } else {
+        // 当前的任务签名已经注册过了
         LOG(INFO) << "fail to register task. type=" << type_str << ", signature=" << signature;
     }
 }
 
+/*注册task签名*/
 bool TaskWorkerPool::_register_task_info(const TTaskType::type task_type, int64_t signature) {
     lock_guard<Mutex> task_signatures_lock(_s_task_signatures_lock);
-    set<int64_t>& signature_set = _s_task_signatures[task_type];
-    return signature_set.insert(signature).second;
+    set<int64_t>& signature_set = _s_task_signatures[task_type]; // 获取当前task类型的所有task的set
+    return signature_set.insert(signature).second; // 将当前任务的签名插入set
+    // set的insert()函数返回一个二元组（pair），成员 pair::first被设置为指向新插入元素的迭代器或指向等值的已经存在
+    // 的元素的迭代器。成员 pair::second 是一个 bool 值，如果新的元素被插入，返回 true，如果等值元素已经存在（即无新
+    // 元素插入），则返回 false。。
 }
 
+/*取消task签名注册*/
 void TaskWorkerPool::_remove_task_info(const TTaskType::type task_type, int64_t signature) {
     size_t queue_size;
     {
         lock_guard<Mutex> task_signatures_lock(_s_task_signatures_lock);
-        set<int64_t>& signature_set = _s_task_signatures[task_type];
-        signature_set.erase(signature);
+        set<int64_t>& signature_set = _s_task_signatures[task_type]; // 获取当前task类型的所有task的set
+        signature_set.erase(signature);   // 将当前任务的签名从set中删除
         queue_size = signature_set.size();
     }
 
@@ -234,6 +242,7 @@ void TaskWorkerPool::_remove_task_info(const TTaskType::type task_type, int64_t 
               << ", queue_size=" << queue_size;
 }
 
+/*根据参数传入的回调函数callback_func创建并启动一个线程*/
 void TaskWorkerPool::_spawn_callback_worker_thread(CALLBACK_FUNCTION callback_func) {
     pthread_t thread;
     sigset_t mask;
@@ -248,32 +257,34 @@ void TaskWorkerPool::_spawn_callback_worker_thread(CALLBACK_FUNCTION callback_fu
     pthread_sigmask(SIG_SETMASK, &mask, &omask);
 
     while (true) {
-        err = pthread_create(&thread, NULL, callback_func, this);
-        if (err != 0) {
+        err = pthread_create(&thread, NULL, callback_func, this); // 使用回调函数callback_func创建一个worker线程
+        if (err != 0) { // 如果线程创建失败，则循环重新创建
             LOG(WARNING) << "failed to spawn a thread. error: " << err;
 #ifndef BE_TEST
             sleep(config::sleep_one_second);
 #endif
         } else {
-            pthread_detach(thread);
+            pthread_detach(thread); // 使新创建的线程脱离，当该线程退出的时候，它的资源会自动释放，主线程不用等待其并释放其资源
             break;
         }
     }
 }
 
+/*task执行结束，向FE汇报task执行结果*/
 void TaskWorkerPool::_finish_task(const TFinishTaskRequest& finish_task_request) {
     // Return result to FE
     TMasterResult result;
     uint32_t try_time = 0;
 
-    while (try_time < TASK_FINISH_MAX_RETRY) {
+    while (try_time < TASK_FINISH_MAX_RETRY) { // TASK_FINISH_MAX_RETRY默认值为3
         DorisMetrics::instance()->finish_task_requests_total.increment(1);
-        AgentStatus client_status = _master_client->finish_task(finish_task_request, &result);
+        AgentStatus client_status = _master_client->finish_task(finish_task_request, &result); // 通过master server client向FE汇报task执行结果
 
         if (client_status == DORIS_SUCCESS) {
             LOG(INFO) << "finish task success.";
             break;
         } else {
+            // 如果向FE汇报task执行结果失败，则重试
             DorisMetrics::instance()->finish_task_requests_failed.increment(1);
             LOG(WARNING) << "finish task failed. status_code=" << result.status.status_code;
             try_time += 1;
@@ -431,6 +442,7 @@ void* TaskWorkerPool::_drop_tablet_worker_thread_callback(void* arg_this) {
     return (void*)0;
 }
 
+/*alter任务的回调函数*/
 void* TaskWorkerPool::_alter_tablet_worker_thread_callback(void* arg_this) {
     TaskWorkerPool* worker_pool_this = (TaskWorkerPool*)arg_this;
 
@@ -441,44 +453,45 @@ void* TaskWorkerPool::_alter_tablet_worker_thread_callback(void* arg_this) {
         {
             lock_guard<Mutex> worker_thread_lock(worker_pool_this->_worker_thread_lock);
             while (worker_pool_this->_tasks.empty()) {
-                worker_pool_this->_worker_thread_condition_variable.wait();
+                worker_pool_this->_worker_thread_condition_variable.wait(); // 如果当前任务队列为空，则线程休眠，直到有新的alter任务提交，会唤醒一个线程
             }
 
-            agent_task_req = worker_pool_this->_tasks.front();
-            worker_pool_this->_tasks.pop_front();
+            agent_task_req = worker_pool_this->_tasks.front(); // 获取任务队列头部的任务请求
+            worker_pool_this->_tasks.pop_front();              // 将任务队列头部的任务请求从队列中弹出
         }
-        int64_t signatrue = agent_task_req.signature;
+        int64_t signatrue = agent_task_req.signature; // 获取任务签名
         LOG(INFO) << "get alter table task, signature: " << agent_task_req.signature;
         bool is_task_timeout = false;
         if (agent_task_req.__isset.recv_time) {
-            int64_t time_elapsed = time(nullptr) - agent_task_req.recv_time;
+            int64_t time_elapsed = time(nullptr) - agent_task_req.recv_time; // 计算当前任务在任务队列中的等待时间
             if (time_elapsed > config::report_task_interval_seconds * 20) {
                 LOG(INFO) << "task elapsed " << time_elapsed
                           << " seconds since it is inserted to queue, it is timeout";
                 is_task_timeout = true;
             }
         }
-        if (!is_task_timeout) {
+        if (!is_task_timeout) { // 如果当前task在任务队列中等待没有超时
             TFinishTaskRequest finish_task_request;
             TTaskType::type task_type = agent_task_req.task_type;
             switch (task_type) {
             case TTaskType::ALTER:
-                worker_pool_this->_alter_tablet(worker_pool_this, agent_task_req, signatrue,
+                worker_pool_this->_alter_tablet(worker_pool_this, agent_task_req, signatrue, // 执行alter tablet操作，要返回给FE的执行结果通过参数finish_task_request传回
                                                 task_type, &finish_task_request);
                 break;
             default:
                 // pass
                 break;
             }
-            worker_pool_this->_finish_task(finish_task_request);
+            worker_pool_this->_finish_task(finish_task_request); // task执行结束，向FE汇报task执行结果
         }
-        worker_pool_this->_remove_task_info(agent_task_req.task_type, agent_task_req.signature);
+        worker_pool_this->_remove_task_info(agent_task_req.task_type, agent_task_req.signature); // 任务执行结束，取消task签名注册
 #ifndef BE_TEST
     }
 #endif
     return (void*)0;
 }
 
+/*执行alter tablet操作*/
 void TaskWorkerPool::_alter_tablet(TaskWorkerPool* worker_pool_this,
                                    const TAgentTaskRequest& agent_task_req, int64_t signature,
                                    const TTaskType::type task_type,
@@ -510,8 +523,8 @@ void TaskWorkerPool::_alter_tablet(TaskWorkerPool* worker_pool_this,
         new_tablet_id = agent_task_req.alter_tablet_req_v2.new_tablet_id;
         new_schema_hash = agent_task_req.alter_tablet_req_v2.new_schema_hash;
         EngineAlterTabletTask engine_task(agent_task_req.alter_tablet_req_v2, signature, task_type,
-                                          &error_msgs, process_name);
-        OLAPStatus sc_status = worker_pool_this->_env->storage_engine()->execute_task(&engine_task);
+                                          &error_msgs, process_name); // 创建EngineAlterTabletTask对象
+        OLAPStatus sc_status = worker_pool_this->_env->storage_engine()->execute_task(&engine_task); // 执行alter tablet的操作
         if (sc_status != OLAP_SUCCESS) {
             status = DORIS_ERROR;
         } else {
@@ -520,32 +533,33 @@ void TaskWorkerPool::_alter_tablet(TaskWorkerPool* worker_pool_this,
     }
 
     if (status == DORIS_SUCCESS) {
-        ++_s_report_version;
+        ++_s_report_version; // 如果alter tablet的操作执行成功，则report版本增1。
         LOG(INFO) << process_name << " finished. signature: " << signature;
     }
 
-    // Return result to fe
-    finish_task_request->__set_backend(_backend);
-    finish_task_request->__set_report_version(_s_report_version);
-    finish_task_request->__set_task_type(task_type);
-    finish_task_request->__set_signature(signature);
+    // 更新返回给FE的task执行结果 Return result to fe
+    finish_task_request->__set_backend(_backend);                 // 设置BE信息（包括host、be_port、http_port）
+    finish_task_request->__set_report_version(_s_report_version); // 设置report版本
+    finish_task_request->__set_task_type(task_type);              // 设置task类型
+    finish_task_request->__set_signature(signature);              // 设置task签名
 
     vector<TTabletInfo> finish_tablet_infos;
     if (status == DORIS_SUCCESS) {
         TTabletInfo tablet_info;
-        status = _get_tablet_info(new_tablet_id, new_schema_hash, signature, &tablet_info);
+        status = _get_tablet_info(new_tablet_id, new_schema_hash, signature, &tablet_info); // 获取要report给FE的当前tablet（tablet_id和schema_hash）的必要信息,通过参数tablet_info传回
 
         if (status != DORIS_SUCCESS) {
             LOG(WARNING) << process_name << " success, but get new tablet info failed."
                          << "tablet_id: " << new_tablet_id << ", schema_hash: " << new_schema_hash
                          << ", signature: " << signature;
         } else {
+            // 如果report给FE的信息获取成功，则将该report信息添加到finish_tablet_infos中
             finish_tablet_infos.push_back(tablet_info);
         }
     }
 
     if (status == DORIS_SUCCESS) {
-        finish_task_request->__set_finish_tablet_infos(finish_tablet_infos);
+        finish_task_request->__set_finish_tablet_infos(finish_tablet_infos); // 给finish_task_request设置finish_tablet_infos，finish_task_request通过参数传回
         LOG(INFO) << process_name << " success. signature: " << signature;
         error_msgs.push_back(process_name + " success");
         task_status.__set_status_code(TStatusCode::OK);
@@ -562,7 +576,7 @@ void TaskWorkerPool::_alter_tablet(TaskWorkerPool* worker_pool_this,
     }
 
     task_status.__set_error_msgs(error_msgs);
-    finish_task_request->__set_task_status(task_status);
+    finish_task_request->__set_task_status(task_status);                    // 给finish_task_request设置task_status，finish_task_request通过参数传回
 }
 
 void* TaskWorkerPool::_push_worker_thread_callback(void* arg_this) {
@@ -1458,6 +1472,7 @@ void* TaskWorkerPool::_release_snapshot_thread_callback(void* arg_this) {
     return (void*)0;
 }
 
+/*获取要report给FE的当前tablet（tablet_id和schema_hash）的必要信息,通过参数tablet_info传回*/
 AgentStatus TaskWorkerPool::_get_tablet_info(const TTabletId tablet_id,
                                              const TSchemaHash schema_hash, int64_t signature,
                                              TTabletInfo* tablet_info) {
@@ -1466,7 +1481,7 @@ AgentStatus TaskWorkerPool::_get_tablet_info(const TTabletId tablet_id,
     tablet_info->__set_tablet_id(tablet_id);
     tablet_info->__set_schema_hash(schema_hash);
     OLAPStatus olap_status =
-            StorageEngine::instance()->tablet_manager()->report_tablet_info(tablet_info);
+            StorageEngine::instance()->tablet_manager()->report_tablet_info(tablet_info); // 获取当前tablet要report给FE的必要信息，通过参数tablet_info
     if (olap_status != OLAP_SUCCESS) {
         LOG(WARNING) << "get tablet info failed. status: " << olap_status
                      << ", signature: " << signature;

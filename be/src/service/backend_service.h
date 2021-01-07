@@ -80,7 +80,7 @@ public:
     virtual void submit_tasks(
             TAgentResult& return_value,
             const std::vector<TAgentTaskRequest>& tasks) {
-        _agent_server->submit_tasks(return_value, tasks);
+        _agent_server->submit_tasks(return_value, tasks); // 提交任务给sgent server
     }
 
     virtual void make_snapshot(

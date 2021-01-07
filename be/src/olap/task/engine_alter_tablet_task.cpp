@@ -32,11 +32,12 @@ EngineAlterTabletTask::EngineAlterTabletTask(const TAlterTabletReqV2& request,
         _error_msgs(error_msgs),
         _process_name(process_name) { }
 
+/*执行alter tablet操作*/
 OLAPStatus EngineAlterTabletTask::execute() {
     DorisMetrics::instance()->create_rollup_requests_total.increment(1);
 
     SchemaChangeHandler handler;
-    OLAPStatus res = handler.process_alter_tablet_v2(_alter_tablet_req);
+    OLAPStatus res = handler.process_alter_tablet_v2(_alter_tablet_req); // 执行alter tablet操作
 
     if (res != OLAP_SUCCESS) {
         LOG(WARNING) << "failed to do alter task. res=" << res

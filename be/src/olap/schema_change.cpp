@@ -1414,7 +1414,7 @@ OLAPStatus SchemaChangeHandler::process_alter_tablet_v2(const TAlterTabletReqV2&
 OLAPStatus SchemaChangeHandler::_do_process_alter_tablet_v2(const TAlterTabletReqV2& request) {
     OLAPStatus res = OLAP_SUCCESS;
     TabletSharedPtr base_tablet = StorageEngine::instance()->tablet_manager()->get_tablet(
-            request.base_tablet_id, request.base_schema_hash);
+            request.base_tablet_id, request.base_schema_hash); // 通过tablet manager获取base tablet
     if (base_tablet == nullptr) {
         LOG(WARNING) << "fail to find base tablet. base_tablet=" << request.base_tablet_id
                      << ", base_schema_hash=" << request.base_schema_hash;
@@ -1423,7 +1423,7 @@ OLAPStatus SchemaChangeHandler::_do_process_alter_tablet_v2(const TAlterTabletRe
 
     // new tablet has to exist
     TabletSharedPtr new_tablet = StorageEngine::instance()->tablet_manager()->get_tablet(
-            request.new_tablet_id, request.new_schema_hash);
+            request.new_tablet_id, request.new_schema_hash);  // 通过tablet manager获取schema change之后的新的tablet
     if (new_tablet == nullptr) {
         LOG(WARNING) << "fail to find new tablet."
                      << " new_tablet=" << request.new_tablet_id

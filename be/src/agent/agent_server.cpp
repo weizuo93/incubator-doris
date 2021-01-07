@@ -39,7 +39,7 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info) :
         _exec_env(exec_env),
         _master_info(master_info),
         _topic_subscriber(new TopicSubscriber()) {
-    for (auto& path : exec_env->store_paths()) {
+    for (auto& path : exec_env->store_paths()) { //依次遍历每一个磁盘路径
         try {
             string dpp_download_path_str = path.path + DPP_PREFIX;
             boost::filesystem::path dpp_download_path(dpp_download_path_str);
@@ -54,25 +54,26 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info) :
     // It is the same code to create workers of each type, so we use a macro
     // to make code to be more readable.
 
+    //按照类型创建并启动某个类型的任务池的所有worker
 #ifndef BE_TEST
 #define CREATE_AND_START_POOL(type, pool_name)         \
-    pool_name.reset(new TaskWorkerPool(                \
+    pool_name.reset(new TaskWorkerPool(                \  //按照worker类型创建一个TaskWorkerPool对象
                 TaskWorkerPool::TaskWorkerType::type,  \
                 _exec_env,                             \
                 master_info));                         \
-    pool_name->start();                 // 执行TaskWorkerPool::start()
+    pool_name->start();                                   // 执行TaskWorkerPool::start()，启动一个任务类型的所有worker
 #else
 #define CREATE_AND_START_POOL(type, pool_name)
 #endif // BE_TEST
 
-    CREATE_AND_START_POOL(CREATE_TABLE, _create_tablet_workers);
+    CREATE_AND_START_POOL(CREATE_TABLE, _create_tablet_workers);                     // 创建并启动create table任务池
     CREATE_AND_START_POOL(DROP_TABLE, _drop_tablet_workers);
     // Both PUSH and REALTIME_PUSH type use _push_workers
     CREATE_AND_START_POOL(PUSH, _push_workers);
     CREATE_AND_START_POOL(PUBLISH_VERSION, _publish_version_workers);
     CREATE_AND_START_POOL(CLEAR_TRANSACTION_TASK, _clear_transaction_task_workers);
     CREATE_AND_START_POOL(DELETE, _delete_workers);
-    CREATE_AND_START_POOL(ALTER_TABLE, _alter_tablet_workers);
+    CREATE_AND_START_POOL(ALTER_TABLE, _alter_tablet_workers);                       // 创建并启动alter tablet任务池
     CREATE_AND_START_POOL(CLONE, _clone_workers);                                    // 创建并启动clone任务池
     CREATE_AND_START_POOL(STORAGE_MEDIUM_MIGRATE, _storage_medium_migrate_workers);
     CREATE_AND_START_POOL(CHECK_CONSISTENCY, _check_consistency_workers);
@@ -100,6 +101,7 @@ AgentServer::~AgentServer() { }
 
 // TODO(lingbin): each task in the batch may have it own status or FE must check and
 // resend request when something is wrong(BE may need some logic to guarantee idempotence.
+/*提交任务给agent server*/
 void AgentServer::submit_tasks(TAgentResult& agent_result, const vector<TAgentTaskRequest>& tasks) {
     Status ret_st;
 
@@ -110,10 +112,10 @@ void AgentServer::submit_tasks(TAgentResult& agent_result, const vector<TAgentTa
         return;
     }
 
-    for (auto task : tasks) {
+    for (auto task : tasks) {  // 依次遍历每一个要提交的任务
         VLOG_RPC << "submit one task: " << apache::thrift::ThriftDebugString(task).c_str();
-        TTaskType::type task_type = task.task_type;
-        int64_t signature = task.signature;
+        TTaskType::type task_type = task.task_type;  // 获取任务类型
+        int64_t signature = task.signature;          // 获取任务签名
 
 #define HANDLE_TYPE(t_task_type, work_pool, req_member)                         \
     case t_task_type:                                                           \
