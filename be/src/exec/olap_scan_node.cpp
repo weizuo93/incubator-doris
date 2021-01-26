@@ -1091,7 +1091,7 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
     // scanner open pushdown to scanThread
     state->resource_pool()->acquire_thread_token();
     Status status = Status::OK();
-    for (auto scanner : _olap_scanners) {
+    for (auto scanner : _olap_scanners) { // 依次遍历每一个olap scanner对象
         status = Expr::clone_if_not_exists(_conjunct_ctxs, state, scanner->conjunct_ctxs());
         if (!status.ok()) {
             std::lock_guard<SpinLock> guard(_status_mutex);
@@ -1230,7 +1230,7 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
     _row_batch_added_cv.notify_all();
 }
 
-/*对一个tablet执行数据读取的task*/
+/*对一个tablet执行一次数据读取的task*/
 void OlapScanNode::scanner_thread(OlapScanner* scanner) {
     Status status = Status::OK();
     bool eos = false;
@@ -1259,6 +1259,7 @@ void OlapScanNode::scanner_thread(OlapScanner* scanner) {
     // data in pre-aggregate mode, then we can't use storage returned data to
     // judge if we need to yield. So we record all raw data read in this round
     // scan, if this exceed threshold, we yield this thread.
+    // 为了防止某一个tablet的scanner一次读取太长时间，对每一个
     int64_t raw_rows_read = scanner->raw_rows_read();
     int64_t raw_rows_threshold = raw_rows_read + config::doris_scanner_row_num;
     while (!eos && raw_rows_read < raw_rows_threshold) {

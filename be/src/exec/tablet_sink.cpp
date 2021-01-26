@@ -34,10 +34,12 @@
 namespace doris {
 namespace stream_load {
 
+/*NodeChannel的构造函数*/
 NodeChannel::NodeChannel(OlapTableSink* parent, int64_t index_id, int64_t node_id,
                          int32_t schema_hash)
         : _parent(parent), _index_id(index_id), _node_id(node_id), _schema_hash(schema_hash) {}
 
+/*NodeChannel的析构函数*/
 NodeChannel::~NodeChannel() {
     if (_open_closure != nullptr) {
         if (_open_closure->unref()) {
@@ -53,9 +55,10 @@ NodeChannel::~NodeChannel() {
     _cur_add_batch_request.release_id();
 }
 
+/*初始化NodeChannel*/
 Status NodeChannel::init(RuntimeState* state) {
-    _tuple_desc = _parent->_output_tuple_desc;
-    _node_info = _parent->_nodes_info->find_node(_node_id);
+    _tuple_desc = _parent->_output_tuple_desc; // 获取tuple desc
+    _node_info = _parent->_nodes_info->find_node(_node_id); // 获取BE节点id
     if (_node_info == nullptr) {
         std::stringstream ss;
         ss << "unknown node id, id=" << _node_id;
@@ -63,11 +66,11 @@ Status NodeChannel::init(RuntimeState* state) {
         return Status::InternalError(ss.str());
     }
 
-    _row_desc.reset(new RowDescriptor(_tuple_desc, false));
-    _batch_size = state->batch_size();
-    _cur_batch.reset(new RowBatch(*_row_desc, _batch_size, _parent->_mem_tracker));
+    _row_desc.reset(new RowDescriptor(_tuple_desc, false)); // 根据tuple desc创建RowDescriptor
+    _batch_size = state->batch_size(); // 获取batch size
+    _cur_batch.reset(new RowBatch(*_row_desc, _batch_size, _parent->_mem_tracker)); // 根据row desc和batch size创建RowBatch对象
 
-    _stub = state->exec_env()->brpc_stub_cache()->get_stub(_node_info->host, _node_info->brpc_port);
+    _stub = state->exec_env()->brpc_stub_cache()->get_stub(_node_info->host, _node_info->brpc_port); // 针对当前NodeChannel对象对应的BE节点，获取brpc的stub
     if (_stub == nullptr) {
         LOG(WARNING) << "Get rpc stub failed, host=" << _node_info->host
                      << ", port=" << _node_info->brpc_port;
@@ -76,12 +79,12 @@ Status NodeChannel::init(RuntimeState* state) {
     }
 
     // Initialize _cur_add_batch_request
-    _cur_add_batch_request.set_allocated_id(&_parent->_load_id);
-    _cur_add_batch_request.set_index_id(_index_id);
-    _cur_add_batch_request.set_sender_id(_parent->_sender_id);
+    _cur_add_batch_request.set_allocated_id(&_parent->_load_id); // 设置add batch的load id
+    _cur_add_batch_request.set_index_id(_index_id);              // 设置add batch的index id
+    _cur_add_batch_request.set_sender_id(_parent->_sender_id);   // 设置add batch的sender id
     _cur_add_batch_request.set_eos(false);
 
-    _rpc_timeout_ms = state->query_options().query_timeout * 1000;
+    _rpc_timeout_ms = state->query_options().query_timeout * 1000; // 设置brpc的超时时间
 
     _load_info = "load_id=" + print_id(_parent->_load_id) +
                  ", txn_id=" + std::to_string(_parent->_txn_id);
@@ -89,6 +92,7 @@ Status NodeChannel::init(RuntimeState* state) {
     return Status::OK();
 }
 
+/*打开NodeChannel*/
 void NodeChannel::open() {
     PTabletWriterOpenRequest request;
     request.set_allocated_id(&_parent->_load_id);
@@ -175,6 +179,7 @@ Status NodeChannel::open_wait() {
     return status;
 }
 
+/*添加一行数据到当前BE对应的NodeChannel*/
 Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
     // If add_row() when _eos_is_produced==true, there must be sth wrong, we can only mark this channel as failed.
     auto st = none_of({_cancelled, _eos_is_produced});
@@ -192,7 +197,7 @@ Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
         SleepFor(MonoDelta::FromMilliseconds(10));
     }
 
-    auto row_no = _cur_batch->add_row();
+    auto row_no = _cur_batch->add_row(); // 获取要添加行的行号
     if (row_no == RowBatch::INVALID_ROW_INDEX) {
         {
             SCOPED_RAW_TIMER(&_queue_push_lock_ns);
@@ -208,9 +213,9 @@ Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
         row_no = _cur_batch->add_row();
     }
     DCHECK_NE(row_no, RowBatch::INVALID_ROW_INDEX);
-    auto tuple = input_tuple->deep_copy(*_tuple_desc, _cur_batch->tuple_data_pool());
-    _cur_batch->get_row(row_no)->set_tuple(0, tuple);
-    _cur_batch->commit_last_row();
+    auto tuple = input_tuple->deep_copy(*_tuple_desc, _cur_batch->tuple_data_pool()); // 堆要添加的行执行深拷贝
+    _cur_batch->get_row(row_no)->set_tuple(0, tuple); // 设置行号为row_no的行数据为深拷贝得到的tuple
+    _cur_batch->commit_last_row(); // 提交一行
     _cur_add_batch_request.add_tablet_ids(tablet_id);
     return Status::OK();
 }
@@ -281,8 +286,9 @@ void NodeChannel::cancel() {
     request.release_id();
 }
 
+/*发送一个batch的数据*/
 int NodeChannel::try_send_and_fetch_status() {
-    auto st = none_of({_cancelled, _send_finished});
+    auto st = none_of({_cancelled, _send_finished}); // 数据发送没有完成，并且没有被取消
     if (!st.ok()) {
         return 0;
     }
@@ -298,14 +304,14 @@ int NodeChannel::try_send_and_fetch_status() {
             _pending_batches_num--;
         }
 
-        auto row_batch = std::move(send_batch.first);
+        auto row_batch = std::move(send_batch.first); // 获取要发送的一个batch数据
         auto request = std::move(send_batch.second); // doesn't need to be saved in heap
 
         // tablet_ids has already set when add row
         request.set_packet_seq(_next_packet_seq);
         if (row_batch->num_rows() > 0) {
             SCOPED_RAW_TIMER(&_serialize_batch_ns);
-            row_batch->serialize(request.mutable_row_batch());
+            row_batch->serialize(request.mutable_row_batch()); // 将需要发送的一个batch数据序列化成PB格式
         }
 
         _add_batch_closure->reset();
@@ -324,7 +330,7 @@ int NodeChannel::try_send_and_fetch_status() {
 
         _add_batch_closure->set_in_flight();
         _stub->tablet_writer_add_batch(&_add_batch_closure->cntl, &request,
-                                       &_add_batch_closure->result, _add_batch_closure);
+                                       &_add_batch_closure->result, _add_batch_closure); // 通过RPC发送一个batch的数据
 
         _next_packet_seq++;
     }
@@ -386,12 +392,13 @@ Status IndexChannel::init(RuntimeState* state, const std::vector<TTabletWithPart
     return Status::OK();
 }
 
+/*添加一行数据到当前rollup对应的IndexChannel*/
 Status IndexChannel::add_row(Tuple* tuple, int64_t tablet_id) {
-    auto it = _channels_by_tablet.find(tablet_id);
+    auto it = _channels_by_tablet.find(tablet_id); // 根据该行数据所在的tablet id查找该tablet所分布的BE节点对应的NodeChannel
     DCHECK(it != std::end(_channels_by_tablet)) << "unknown tablet, tablet_id=" << tablet_id;
-    for (auto channel : it->second) {
+    for (auto channel : it->second) { // it->second对应的类型为std::vector<NodeChannel*>，表示该tablet所分布的所有BE节点对应的NodeChannel
         // if this node channel is already failed, this add_row will be skipped
-        auto st = channel->add_row(tuple, tablet_id);
+        auto st = channel->add_row(tuple, tablet_id); // 将该行数据添加到当前BE节点所对应的NodeChannel
         if (!st.ok()) {
             mark_as_failed(channel);
         }
@@ -408,6 +415,7 @@ bool IndexChannel::has_intolerable_failure() {
     return _failed_channels.size() >= ((_parent->_num_repicas + 1) / 2);
 }
 
+/*OlapTableSink的构造函数*/
 OlapTableSink::OlapTableSink(ObjectPool* pool, const RowDescriptor& row_desc,
                              const std::vector<TExpr>& texprs, Status* status)
         : _pool(pool), _input_row_desc(row_desc), _filter_bitmap(1024) {
@@ -416,6 +424,7 @@ OlapTableSink::OlapTableSink(ObjectPool* pool, const RowDescriptor& row_desc,
     }
 }
 
+/*OlapTableSink的析构函数*/
 OlapTableSink::~OlapTableSink() {
     // We clear NodeChannels' batches here, cuz NodeChannels' batches destruction will use
     // OlapTableSink::_mem_tracker and its parents.
@@ -426,6 +435,7 @@ OlapTableSink::~OlapTableSink() {
     }
 }
 
+/*初始化OlapTableSink*/
 Status OlapTableSink::init(const TDataSink& t_sink) {
     DCHECK(t_sink.__isset.olap_table_sink);
     auto& table_sink = t_sink.olap_table_sink;
@@ -455,6 +465,7 @@ Status OlapTableSink::init(const TDataSink& t_sink) {
     return Status::OK();
 }
 
+/*执行OlapTableSink的准备工作*/
 Status OlapTableSink::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(DataSink::prepare(state));
 
@@ -566,16 +577,19 @@ Status OlapTableSink::prepare(RuntimeState* state) {
     return Status::OK();
 }
 
+/*打开OlapTableSink*/
 Status OlapTableSink::open(RuntimeState* state) {
     SCOPED_TIMER(_profile->total_time_counter());
     SCOPED_TIMER(_open_timer);
     // Prepare the exprs to run.
     RETURN_IF_ERROR(Expr::open(_output_expr_ctxs, state));
 
+    // 遍历每一个rollup对应的index_channel，打开每一个index_channel对应的所有NodeChannel
     for (auto index_channel : _channels) {
         index_channel->for_each_node_channel([](NodeChannel* ch) { ch->open(); });
     }
 
+    // 遍历每一个rollup对应的index_channel，打开每一个index_channel对应的所有NodeChannel
     for (auto index_channel : _channels) {
         index_channel->for_each_node_channel([&index_channel](NodeChannel* ch) {
             auto st = ch->open_wait();
@@ -593,11 +607,12 @@ Status OlapTableSink::open(RuntimeState* state) {
         }
     }
 
-    _sender_thread = std::thread(&OlapTableSink::_send_batch_process, this);
+    _sender_thread = std::thread(&OlapTableSink::_send_batch_process, this); // 创建数据发送线程
 
     return Status::OK();
 }
 
+/*发送一个RowBatch的数据*/
 Status OlapTableSink::send(RuntimeState* state, RowBatch* input_batch) {
     SCOPED_TIMER(_profile->total_time_counter());
     _number_input_rows += input_batch->num_rows();
@@ -623,14 +638,14 @@ Status OlapTableSink::send(RuntimeState* state, RowBatch* input_batch) {
         _number_filtered_rows += num_invalid_rows;
     }
     SCOPED_RAW_TIMER(&_send_data_ns);
-    for (int i = 0; i < batch->num_rows(); ++i) {
-        Tuple* tuple = batch->get_row(i)->get_tuple(0);
+    for (int i = 0; i < batch->num_rows(); ++i) { // 遍历batch中的每一行数据
+        Tuple* tuple = batch->get_row(i)->get_tuple(0); // 获取一行数据，保存在Tuple中
         if (num_invalid_rows > 0 && _filter_bitmap.Get(i)) {
             continue;
         }
         const OlapTablePartition* partition = nullptr;
         uint32_t dist_hash = 0;
-        if (!_partition->find_tablet(tuple, &partition, &dist_hash)) {
+        if (!_partition->find_tablet(tuple, &partition, &dist_hash)) { // 计算当前行数据所在的partition和目标hash
             std::stringstream ss;
             ss << "no partition for this tuple. tuple="
                << Tuple::to_string(tuple, *_output_tuple_desc);
@@ -642,17 +657,18 @@ Status OlapTableSink::send(RuntimeState* state, RowBatch* input_batch) {
             _number_filtered_rows++;
             continue;
         }
-        _partition_ids.emplace(partition->id);
-        uint32_t tablet_index = dist_hash % partition->num_buckets;
-        for (int j = 0; j < partition->indexes.size(); ++j) {
-            int64_t tablet_id = partition->indexes[j].tablets[tablet_index];
-            RETURN_IF_ERROR(_channels[j]->add_row(tuple, tablet_id));
+        _partition_ids.emplace(partition->id); // 当前行数据所在的partition添加到成员变量_partition_ids中
+        uint32_t tablet_index = dist_hash % partition->num_buckets; // 获取tablet在partition中的索引
+        for (int j = 0; j < partition->indexes.size(); ++j) { // 依次遍历partition对应的每一个rollup
+            int64_t tablet_id = partition->indexes[j].tablets[tablet_index]; // 根据tablet在partition中的索引获取该行数据在当前rollup中tablet id
+            RETURN_IF_ERROR(_channels[j]->add_row(tuple, tablet_id)); // 将该行数据添加到当前rollup对应的IndexChannel，进而，根据该行数据所在的tablet在BE上的分布，将该行数据分别添加到对应的NodeChannel中
             _number_output_rows++;
         }
     }
     return Status::OK();
 }
 
+/*关闭OlapTableSink*/
 Status OlapTableSink::close(RuntimeState* state, Status close_status) {
     Status status = close_status;
     if (status.ok()) {
@@ -665,6 +681,7 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                 actual_consume_ns = 0;
         {
             SCOPED_TIMER(_close_timer);
+            // 遍历每一个rollup对应的index_channel，关闭每一个index_channel对应的所有NodeChannel
             for (auto index_channel : _channels) {
                 index_channel->for_each_node_channel([](NodeChannel* ch) { ch->mark_close(); });
             }
@@ -716,6 +733,7 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
         }
         LOG(INFO) << ss.str();
     } else {
+        // 遍历每一个rollup对应的index_channel，取消每一个index_channel对应的所有NodeChannel
         for (auto channel : _channels) {
             channel->for_each_node_channel([](NodeChannel* ch) { ch->cancel(); });
         }
@@ -724,7 +742,7 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
     // Sender join() must put after node channels mark_close/cancel.
     // But there is no specific sequence required between sender join() & close_wait().
     if (_sender_thread.joinable()) {
-        _sender_thread.join();
+        _sender_thread.join(); // join数据发送线程
     }
 
     Expr::close(_output_expr_ctxs, state);
@@ -898,13 +916,14 @@ int OlapTableSink::_validate_data(RuntimeState* state, RowBatch* batch, Bitmap* 
     return filtered_rows;
 }
 
+/*数据发送线程的执行函数*/
 void OlapTableSink::_send_batch_process() {
     SCOPED_RAW_TIMER(&_non_blocking_send_ns);
     while (true) {
         int running_channels_num = 0;
-        for (auto index_channel : _channels) {
+        for (auto index_channel : _channels) { // 遍历每一个index_channel
             index_channel->for_each_node_channel([&running_channels_num](NodeChannel* ch) {
-                running_channels_num += ch->try_send_and_fetch_status();
+                running_channels_num += ch->try_send_and_fetch_status(); // 发送一个batch的数据
             });
         }
 

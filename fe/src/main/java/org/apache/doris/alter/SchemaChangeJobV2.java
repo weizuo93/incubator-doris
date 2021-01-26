@@ -274,7 +274,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                 Config.max_create_table_timeout_second * 1000L);
             boolean ok = false;
             try {
-                ok = countDownLatch.await(timeout, TimeUnit.MILLISECONDS);
+                ok = countDownLatch.await(timeout, TimeUnit.MILLISECONDS); // 线程休眠，等待replica创建成功
             } catch (InterruptedException e) {
                 LOG.warn("InterruptedException: ", e);
                 ok = false;

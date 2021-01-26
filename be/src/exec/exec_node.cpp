@@ -160,12 +160,14 @@ void ExecNode::push_down_predicate(
     }
 }
 
+/*node初始化*/
 Status ExecNode::init(const TPlanNode& tnode, RuntimeState* state) {
     RETURN_IF_ERROR(
         Expr::create_expr_trees(_pool, tnode.conjuncts, &_conjunct_ctxs));
     return Status::OK();
 }
 
+/*执行prepare*/
 Status ExecNode::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(exec_debug_action(TExecNodePhase::PREPARE));
     DCHECK(_runtime_profile.get() != NULL);
@@ -181,12 +183,12 @@ Status ExecNode::prepare(RuntimeState* state) {
     _expr_mem_tracker.reset(new MemTracker(-1, "Exprs", _mem_tracker.get()));
     _expr_mem_pool.reset(new MemPool(_expr_mem_tracker.get()));
     // TODO chenhao
-    RETURN_IF_ERROR(Expr::prepare(_conjunct_ctxs, state, row_desc(), expr_mem_tracker()));
+    RETURN_IF_ERROR(Expr::prepare(_conjunct_ctxs, state, row_desc(), expr_mem_tracker())); // 执行prepare
     // TODO(zc):
     // AddExprCtxsToFree(_conjunct_ctxs);
 
     for (int i = 0; i < _children.size(); ++i) {
-        RETURN_IF_ERROR(_children[i]->prepare(state));
+        RETURN_IF_ERROR(_children[i]->prepare(state)); // 依次对每一个子节点递归执行prepare
     }
 
     return Status::OK();

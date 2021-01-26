@@ -239,6 +239,7 @@ private:
     int64_t _actual_consume_ns = 0;
 };
 
+/*每一个Index对应table的一个roll up*/
 class IndexChannel {
 public:
     IndexChannel(OlapTableSink* parent, int64_t index_id, int32_t schema_hash)
@@ -357,7 +358,7 @@ private:
     Bitmap _filter_bitmap;
 
     // index_channel
-    std::vector<IndexChannel*> _channels;
+    std::vector<IndexChannel*> _channels; // 保存当前表的所有roll up的IndexChannel（每个IndexChannel对应table的一个roll up）
 
     std::thread _sender_thread;
 

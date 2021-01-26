@@ -77,24 +77,25 @@ public class LoadAction extends RestBaseAction {
             throw new DdlException("There is no 100-continue header");
         }
 
-        final String clusterName = ConnectContext.get().getClusterName();
+        final String clusterName = ConnectContext.get().getClusterName(); // 获取集群名称
         if (Strings.isNullOrEmpty(clusterName)) {
             throw new DdlException("No cluster selected.");
         }
 
-        String dbName = request.getSingleParameter(DB_KEY);
+        String dbName = request.getSingleParameter(DB_KEY);               // 获取数据库名称
         if (Strings.isNullOrEmpty(dbName)) {
             throw new DdlException("No database selected.");
         }
 
-        String tableName = request.getSingleParameter(TABLE_KEY);
+        String tableName = request.getSingleParameter(TABLE_KEY);         // 获取表名称
         if (Strings.isNullOrEmpty(tableName)) {
             throw new DdlException("No table selected.");
         }
         
         String fullDbName = ClusterNamespace.getFullName(clusterName, dbName);
 
-        String label = request.getSingleParameter(LABEL_KEY);
+        String label = request.getSingleParameter(LABEL_KEY);             // 获取label信息
+
         if (!isStreamLoad) {
             if (Strings.isNullOrEmpty(label)) {
                 throw new DdlException("No label selected.");
@@ -115,17 +116,17 @@ public class LoadAction extends RestBaseAction {
         }
 
         // Choose a backend sequentially.
-        List<Long> backendIds = Catalog.getCurrentSystemInfo().seqChooseBackendIds(1, true, false, clusterName);
+        List<Long> backendIds = Catalog.getCurrentSystemInfo().seqChooseBackendIds(1, true, false, clusterName); // 获取集群中的BE节点，保存在List中
         if (backendIds == null) {
             throw new DdlException("No backend alive.");
         }
 
-        Backend backend = Catalog.getCurrentSystemInfo().getBackend(backendIds.get(0));
+        Backend backend = Catalog.getCurrentSystemInfo().getBackend(backendIds.get(0)); // 获取List中第一个BE
         if (backend == null) {
             throw new DdlException("No backend alive.");
         }
 
-        TNetworkAddress redirectAddr = new TNetworkAddress(backend.getHost(), backend.getHttpPort());
+        TNetworkAddress redirectAddr = new TNetworkAddress(backend.getHost(), backend.getHttpPort()); // 获取BE的网络地址
 
         if (!isStreamLoad) {
             String subLabel = request.getSingleParameter(SUB_LABEL_NAME_PARAM);
@@ -136,7 +137,7 @@ public class LoadAction extends RestBaseAction {
 
         LOG.info("redirect load action to destination={}, stream: {}, db: {}, tbl: {}, label: {}",
                 redirectAddr.toString(), isStreamLoad, dbName, tableName, label);
-        redirectTo(request, response, redirectAddr);
+        redirectTo(request, response, redirectAddr); // 将stream load任务转发到BE上执行，该BE作为本次stream load的coordinator
     }
 }
 
