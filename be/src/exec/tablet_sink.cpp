@@ -56,6 +56,7 @@ NodeChannel::~NodeChannel() {
 }
 
 /*初始化NodeChannel*/
+// 每一个NodeChannel对象对应一个BE节点（NodeChannel与schema有关，table的不同rollup数据导入相同BE时对应的NodeChannel对象不同）
 Status NodeChannel::init(RuntimeState* state) {
     _tuple_desc = _parent->_output_tuple_desc; // 获取tuple desc
     _node_info = _parent->_nodes_info->find_node(_node_id); // 获取BE节点id
@@ -99,7 +100,7 @@ void NodeChannel::open() {
     request.set_index_id(_index_id);
     request.set_txn_id(_parent->_txn_id);
     request.set_allocated_schema(_parent->_schema->to_protobuf());
-    for (auto& tablet : _all_tablets) {
+    for (auto& tablet : _all_tablets) { // 遍历当前NodeChannel涉及的所有tablet，添加到request中
         auto ptablet = request.add_tablets();
         ptablet->set_partition_id(tablet.partition_id);
         ptablet->set_tablet_id(tablet.tablet_id);
@@ -116,11 +117,12 @@ void NodeChannel::open() {
     _open_closure->ref();
     _open_closure->cntl.set_timeout_ms(config::tablet_writer_open_rpc_timeout_sec * 1000);
     _stub->tablet_writer_open(&_open_closure->cntl, &request, &_open_closure->result,
-                              _open_closure);
+                              _open_closure); // 通过RPC打开tablet_writer
     request.release_id();
     request.release_schema();
 }
 
+/*等待打开NodeChannel*/
 Status NodeChannel::open_wait() {
     _open_closure->join();
     if (_open_closure->cntl.Failed()) {
@@ -197,20 +199,21 @@ Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
         SleepFor(MonoDelta::FromMilliseconds(10));
     }
 
-    auto row_no = _cur_batch->add_row(); // 获取要添加行的行号
+    auto row_no = _cur_batch->add_row(); // 添加一行数据，获取要添加行的行号
     if (row_no == RowBatch::INVALID_ROW_INDEX) {
+        // _cur_batch中的数据行达到了batch size，一个batch数据已满
         {
             SCOPED_RAW_TIMER(&_queue_push_lock_ns);
             std::lock_guard<std::mutex> l(_pending_batches_lock);
             //To simplify the add_row logic, postpone adding batch into req until the time of sending req
-            _pending_batches.emplace(std::move(_cur_batch), _cur_add_batch_request);
+            _pending_batches.emplace(std::move(_cur_batch), _cur_add_batch_request); // 生产出一个batch的数据，并将当前batch的数据添加到成员变量_pending_batches中
             _pending_batches_num++;
         }
 
-        _cur_batch.reset(new RowBatch(*_row_desc, _batch_size, _parent->_mem_tracker));
+        _cur_batch.reset(new RowBatch(*_row_desc, _batch_size, _parent->_mem_tracker)); // 清空数据batch，reset成员变量_cur_batch
         _cur_add_batch_request.clear_tablet_ids();
 
-        row_no = _cur_batch->add_row();
+        row_no = _cur_batch->add_row(); // 将需要添加的数据行添加到新的数据batch中
     }
     DCHECK_NE(row_no, RowBatch::INVALID_ROW_INDEX);
     auto tuple = input_tuple->deep_copy(*_tuple_desc, _cur_batch->tuple_data_pool()); // 堆要添加的行执行深拷贝
@@ -220,6 +223,7 @@ Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
     return Status::OK();
 }
 
+/*将NodeChannel标记为close*/
 Status NodeChannel::mark_close() {
     auto st = none_of({_cancelled, _eos_is_produced});
     if (!st.ok()) {
@@ -229,15 +233,16 @@ Status NodeChannel::mark_close() {
     _cur_add_batch_request.set_eos(true);
     {
         std::lock_guard<std::mutex> l(_pending_batches_lock);
-        _pending_batches.emplace(std::move(_cur_batch), _cur_add_batch_request);
+        _pending_batches.emplace(std::move(_cur_batch), _cur_add_batch_request); // 将NodeChannel标记为close，并将当前的数据batch添加到成员变量_pending_batches
         _pending_batches_num++;
         DCHECK(_pending_batches.back().second.eos());
     }
 
-    _eos_is_produced = true;
+    _eos_is_produced = true; // 更新标志_eos_is_produced
     return Status::OK();
 }
 
+/*等待关闭NodeChannel*/
 Status NodeChannel::close_wait(RuntimeState* state) {
     auto st = none_of({_cancelled, !_eos_is_produced});
     if (!st.ok()) {
@@ -268,6 +273,7 @@ Status NodeChannel::close_wait(RuntimeState* state) {
     return Status::InternalError("close wait failed coz rpc error");
 }
 
+/*关闭NodeChannel*/
 void NodeChannel::cancel() {
     // we don't need to wait last rpc finished, cause closure's release/reset will join.
     // But do we need brpc::StartCancel(call_id)?
@@ -282,7 +288,7 @@ void NodeChannel::cancel() {
 
     closure->ref();
     closure->cntl.set_timeout_ms(_rpc_timeout_ms);
-    _stub->tablet_writer_cancel(&closure->cntl, &request, &closure->result, closure);
+    _stub->tablet_writer_cancel(&closure->cntl, &request, &closure->result, closure); // 通过RPC取消tablet_writer
     request.release_id();
 }
 
@@ -299,7 +305,7 @@ int NodeChannel::try_send_and_fetch_status() {
         {
             std::lock_guard<std::mutex> lg(_pending_batches_lock);
             DCHECK(!_pending_batches.empty());
-            send_batch = std::move(_pending_batches.front());
+            send_batch = std::move(_pending_batches.front()); // 需要通过NodeChannel发送的数据batch都保存在成员变量_pending_batches中，由生产者生产，由数据发送线程消费
             _pending_batches.pop();
             _pending_batches_num--;
         }
@@ -324,7 +330,7 @@ int NodeChannel::try_send_and_fetch_status() {
 
             // eos request must be the last request
             _add_batch_closure->end_mark();
-            _send_finished = true;
+            _send_finished = true; // 当前batch为最后一个数据batch，数据发送完成
             DCHECK(_pending_batches_num == 0);
         }
 
@@ -335,7 +341,7 @@ int NodeChannel::try_send_and_fetch_status() {
         _next_packet_seq++;
     }
 
-    return _send_finished ? 0 : 1;
+    return _send_finished ? 0 : 1; // 如果当前NodeChannel发送数据完成，则返回0；否则，返回1
 }
 
 Status NodeChannel::none_of(std::initializer_list<bool> vars) {
@@ -354,6 +360,7 @@ Status NodeChannel::none_of(std::initializer_list<bool> vars) {
     return st;
 }
 
+/*清空NodeChannel（成员变量_pending_batches）中的所有batch*/
 void NodeChannel::clear_all_batches() {
     std::lock_guard<std::mutex> lg(_pending_batches_lock);
     std::queue<AddBatchReq> empty;
@@ -363,30 +370,32 @@ void NodeChannel::clear_all_batches() {
 
 IndexChannel::~IndexChannel() {}
 
+/*初始化IndexChannel*/
+// 每一个IndexChannel对象对应一个table的rollup
 Status IndexChannel::init(RuntimeState* state, const std::vector<TTabletWithPartition>& tablets) {
-    for (auto& tablet : tablets) {
+    for (auto& tablet : tablets) { // 遍历当前rollup下的每一个tablet
         auto location = _parent->_location->find_tablet(tablet.tablet_id);
         if (location == nullptr) {
             LOG(WARNING) << "unknow tablet, tablet_id=" << tablet.tablet_id;
             return Status::InternalError("unknown tablet");
         }
         std::vector<NodeChannel*> channels;
-        for (auto& node_id : location->node_ids) {
+        for (auto& node_id : location->node_ids) { // 遍历当前tablet分布的每一个BE节点
             NodeChannel* channel = nullptr;
-            auto it = _node_channels.find(node_id);
+            auto it = _node_channels.find(node_id); // 查找某一个BE节点对应的NodeChannel是否在成员变量_node_channels中
             if (it == std::end(_node_channels)) {
                 channel = _parent->_pool->add(
-                        new NodeChannel(_parent, _index_id, node_id, _schema_hash));
-                _node_channels.emplace(node_id, channel);
+                        new NodeChannel(_parent, _index_id, node_id, _schema_hash)); // 如果BE节点对应的NodeChannel不在成员变量_node_channels中，则创建NodeChannel
+                _node_channels.emplace(node_id, channel); //将BE节点添加到成员变量_node_channels中管理
             } else {
-                channel = it->second;
+                channel = it->second; // 如果BE节点对应的NodeChannel在成员变量_node_channels中，则获取BE节点对应的NodeChannel
             }
-            channel->add_tablet(tablet);
-            channels.push_back(channel);
+            channel->add_tablet(tablet); // 将当前tablet添加到BE节点对应的NodeChannel
+            channels.push_back(channel); // channels中保存当前tablet分布的所有BE节点对应的NodeChannel
         }
-        _channels_by_tablet.emplace(tablet.tablet_id, std::move(channels));
+        _channels_by_tablet.emplace(tablet.tablet_id, std::move(channels)); // 将当前tablet分布的所有BE节点对应的NodeChannel添加到成员变量_channels_by_tablet中管理
     }
-    for (auto& it : _node_channels) {
+    for (auto& it : _node_channels) { // 依次遍历并初始化当前rollup下所有tablet分布的所有BE对应的NodeChannel
         RETURN_IF_ERROR(it.second->init(state));
     }
     return Status::OK();
@@ -400,17 +409,18 @@ Status IndexChannel::add_row(Tuple* tuple, int64_t tablet_id) {
         // if this node channel is already failed, this add_row will be skipped
         auto st = channel->add_row(tuple, tablet_id); // 将该行数据添加到当前BE节点所对应的NodeChannel
         if (!st.ok()) {
-            mark_as_failed(channel);
+            mark_as_failed(channel); // 将当前NodeChannel标记为失败
         }
     }
 
-    if (has_intolerable_failure()) {
+    if (has_intolerable_failure()) { // 如果发生了不可容忍的失败，则返回
         return Status::InternalError("index channel has intoleralbe failure");
     }
 
     return Status::OK();
 }
 
+/*如果失败的NodeChannel数目超过特定阈值（对于3副本来说，超过两个副本写失败），则为不可容忍的失败*/
 bool IndexChannel::has_intolerable_failure() {
     return _failed_channels.size() >= ((_parent->_num_repicas + 1) / 2);
 }
@@ -557,21 +567,21 @@ Status OlapTableSink::prepare(RuntimeState* state) {
 
     // open all channels
     auto& partitions = _partition->get_partitions();
-    for (int i = 0; i < _schema->indexes().size(); ++i) {
+    for (int i = 0; i < _schema->indexes().size(); ++i) { // 遍历table下的每一个rollup，每一个rollup对应一个index
         // collect all tablets belong to this rollup
-        std::vector<TTabletWithPartition> tablets;
+        std::vector<TTabletWithPartition> tablets; // 保存当前rollup下的所有tablet
         auto index = _schema->indexes()[i];
-        for (auto part : partitions) {
-            for (auto tablet : part->indexes[i].tablets) {
+        for (auto part : partitions) { // 依次遍历当前rollup的每一个partition
+            for (auto tablet : part->indexes[i].tablets) { // 依次遍历当前rollup的某个partition下的所有tablet
                 TTabletWithPartition tablet_with_partition;
                 tablet_with_partition.partition_id = part->id;
                 tablet_with_partition.tablet_id = tablet;
                 tablets.emplace_back(std::move(tablet_with_partition));
             }
         }
-        auto channel = _pool->add(new IndexChannel(this, index->index_id, index->schema_hash));
-        RETURN_IF_ERROR(channel->init(state, tablets));
-        _channels.emplace_back(channel);
+        auto channel = _pool->add(new IndexChannel(this, index->index_id, index->schema_hash)); // 创建IndexChannel对象
+        RETURN_IF_ERROR(channel->init(state, tablets)); // 初始化当前的IndexChannel
+        _channels.emplace_back(channel); // 将当前的IndexChannel对象添加到成员变量
     }
 
     return Status::OK();
@@ -681,11 +691,12 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                 actual_consume_ns = 0;
         {
             SCOPED_TIMER(_close_timer);
-            // 遍历每一个rollup对应的index_channel，关闭每一个index_channel对应的所有NodeChannel
+            // 遍历每一个rollup对应的index_channel，将每一个index_channel下的所有NodeChannel标记为关闭
             for (auto index_channel : _channels) {
                 index_channel->for_each_node_channel([](NodeChannel* ch) { ch->mark_close(); });
             }
 
+            // 遍历每一个rollup对应的index_channel，关闭每一个index_channel下的所有NodeChannel
             for (auto index_channel : _channels) {
                 index_channel->for_each_node_channel([&status, &state, &node_add_batch_counter_map,
                                                       &serialize_batch_ns, &mem_exceeded_block_ns,
