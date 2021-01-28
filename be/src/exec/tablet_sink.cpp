@@ -314,6 +314,7 @@ int NodeChannel::try_send_and_fetch_status() {
         auto request = std::move(send_batch.second); // doesn't need to be saved in heap
 
         // tablet_ids has already set when add row
+
         request.set_packet_seq(_next_packet_seq);
         if (row_batch->num_rows() > 0) {
             SCOPED_RAW_TIMER(&_serialize_batch_ns);
@@ -477,7 +478,7 @@ Status OlapTableSink::init(const TDataSink& t_sink) {
 
 /*执行OlapTableSink的准备工作*/
 Status OlapTableSink::prepare(RuntimeState* state) {
-    RETURN_IF_ERROR(DataSink::prepare(state));
+    RETURN_IF_ERROR(DataSink::prepare(state)); // 执行父类DataSink的prepare()函数
 
     _sender_id = state->per_fragment_instance_idx();
     _num_senders = state->num_per_fragment_instances();

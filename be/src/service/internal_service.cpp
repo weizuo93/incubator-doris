@@ -55,6 +55,7 @@ void PInternalServiceImpl<T>::transmit_data(google::protobuf::RpcController* cnt
     }
 }
 
+/*接收来自coordinator的tablet_writer_open的brpc请求*/
 template<typename T>
 void PInternalServiceImpl<T>::tablet_writer_open(google::protobuf::RpcController* controller,
                                               const PTabletWriterOpenRequest* request,
@@ -63,7 +64,7 @@ void PInternalServiceImpl<T>::tablet_writer_open(google::protobuf::RpcController
     VLOG_RPC << "tablet writer open, id=" << request->id()
         << ", index_id=" << request->index_id() << ", txn_id=" << request->txn_id();
     brpc::ClosureGuard closure_guard(done);
-    auto st = _exec_env->load_channel_mgr()->open(*request);
+    auto st = _exec_env->load_channel_mgr()->open(*request); // 通过load_channel_mgr打开一个load channel
     if (!st.ok()) {
         LOG(WARNING) << "load channel open failed, message=" << st.get_error_msg()
             << ", id=" << request->id()
@@ -89,6 +90,7 @@ void PInternalServiceImpl<T>::exec_plan_fragment(
     st.to_protobuf(response->mutable_status());
 }
 
+/*接收来自coordinator的tablet_writer_add_batch的brpc请求*/
 template<typename T>
 void PInternalServiceImpl<T>::tablet_writer_add_batch(google::protobuf::RpcController* controller,
                                                       const PTabletWriterAddBatchRequest* request,
@@ -108,7 +110,7 @@ void PInternalServiceImpl<T>::tablet_writer_add_batch(google::protobuf::RpcContr
             {
                 SCOPED_RAW_TIMER(&execution_time_ns);
                 auto st = _exec_env->load_channel_mgr()->add_batch(
-                        *request, response->mutable_tablet_vec(), &wait_lock_time_ns);
+                        *request, response->mutable_tablet_vec(), &wait_lock_time_ns); // 通过load_channel_mgr写入一个batch的数据
                 if (!st.ok()) {
                     LOG(WARNING) << "tablet writer add batch failed, message=" << st.get_error_msg()
                         << ", id=" << request->id()
@@ -122,6 +124,7 @@ void PInternalServiceImpl<T>::tablet_writer_add_batch(google::protobuf::RpcContr
         });
 }
 
+/*接收来自coordinator的tablet_writer_cancel的brpc请求*/
 template<typename T>
 void PInternalServiceImpl<T>::tablet_writer_cancel(google::protobuf::RpcController* controller,
                                                 const PTabletWriterCancelRequest* request,
@@ -154,6 +157,7 @@ Status PInternalServiceImpl<T>::_exec_plan_fragment(brpc::Controller* cntl) {
     return _exec_env->fragment_mgr()->exec_plan_fragment(t_request); // 通过FragmentMgr对象执行一个fragment计划
 }
 
+/*取消fragment计划*/
 template<typename T>
 void PInternalServiceImpl<T>::cancel_plan_fragment(
         google::protobuf::RpcController* cntl_base,

@@ -140,6 +140,7 @@ OLAPStatus BetaRowsetWriter::flush() {
     return OLAP_SUCCESS;
 }
 
+/*更新rowset的meta信息*/
 RowsetSharedPtr BetaRowsetWriter::build() {
     // TODO(lingbin): move to more better place, or in a CreateBlockBatch?
     for (auto& wblock : _wblocks) {
@@ -148,28 +149,28 @@ RowsetSharedPtr BetaRowsetWriter::build() {
     // When building a rowset, we must ensure that the current _segment_writer has been
     // flushed, that is, the current _segment_wirter is nullptr
     DCHECK(_segment_writer == nullptr) << "segment must be null when build rowset";
-    _rowset_meta->set_num_rows(_num_rows_written);
-    _rowset_meta->set_total_disk_size(_total_data_size);
+    _rowset_meta->set_num_rows(_num_rows_written);       // 设置rowset中的行数
+    _rowset_meta->set_total_disk_size(_total_data_size); // 设置rowset的数据大小
     _rowset_meta->set_data_disk_size(_total_data_size);
     _rowset_meta->set_index_disk_size(_total_index_size);
     // TODO write zonemap to meta
     _rowset_meta->set_empty(_num_rows_written == 0);
     _rowset_meta->set_creation_time(time(nullptr));
-    _rowset_meta->set_num_segments(_num_segment);
+    _rowset_meta->set_num_segments(_num_segment);         // 设置rowset中的segment文件数目
     if (_num_segment <= 1) {
-        _rowset_meta->set_segments_overlap(NONOVERLAPPING);
+        _rowset_meta->set_segments_overlap(NONOVERLAPPING); // 如果文件数目小于或等于1，则segment之间是NONOVERLAPPING，否则是OVERLAPPING
     }
     if (_is_pending) {
-        _rowset_meta->set_rowset_state(COMMITTED);
+        _rowset_meta->set_rowset_state(COMMITTED); // 设置rowset的状态为COMMITTED
     } else {
-        _rowset_meta->set_rowset_state(VISIBLE);
+        _rowset_meta->set_rowset_state(VISIBLE);   // 设置rowset的状态为VISIBLE
     }
 
     RowsetSharedPtr rowset;
     auto status = RowsetFactory::create_rowset(_context.tablet_schema,
                                                _context.rowset_path_prefix,
                                                _rowset_meta,
-                                               &rowset);
+                                               &rowset); // 根据rowset meta创建一个rowset，通过参数rowset传回
     if (status != OLAP_SUCCESS) {
         LOG(WARNING) << "rowset init failed when build new rowset, res=" << status;
         return nullptr;

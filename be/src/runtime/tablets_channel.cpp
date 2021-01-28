@@ -150,7 +150,7 @@ Status TabletsChannel::close(int sender_id, bool* finished,
         std::vector<DeltaWriter*> need_wait_writers;
         for (auto& it : _tablet_writers) { //遍历每一个DeltaWriter对象
             if (_partition_ids.count(it.second->partition_id()) > 0) { //set::count()是C++ STL中的内置函数，它返回元素在集合中出现的次数，由于set容器仅包含唯一元素，因此只能返回1或0。
-                auto st = it.second->close(); //关闭DeltaWriter，实质上是通过flush token将memtable提交给flush executor
+                auto st = it.second->close(); //关闭DeltaWriter，实质上只是通过flush token将memtable提交给flush executor
                 if (st != OLAP_SUCCESS) {
                     LOG(WARNING) << "close tablet writer failed, tablet_id=" << it.first
                         << ", transaction_id=" << _txn_id << ", err=" << st;
@@ -173,7 +173,7 @@ Status TabletsChannel::close(int sender_id, bool* finished,
         for (auto writer : need_wait_writers) {
             // close may return failed, but no need to handle it here.
             // tablet_vec will only contains success tablet, and then let FE judge it.
-            writer->close_wait(tablet_vec); //更新rowset的meta信息，并向FE提交事务
+            writer->close_wait(tablet_vec); //等待flush任务结束，更新rowset的meta信息，并向FE提交事务
         }
         // TODO(gaodayue) clear and destruct all delta writers to make sure all memory are freed
         // DCHECK_EQ(_mem_tracker->consumption(), 0);

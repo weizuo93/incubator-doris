@@ -42,6 +42,7 @@ TLoadTxnRollbackResult k_stream_load_rollback_result;
 Status k_stream_load_plan_status;
 #endif
 
+/*执行stream load的fragment计划*/
 Status StreamLoadExecutor::execute_plan_fragment(StreamLoadContext* ctx) {
     DorisMetrics::instance()->txn_exec_plan_total.increment(1);
 // submit this params
@@ -50,7 +51,7 @@ Status StreamLoadExecutor::execute_plan_fragment(StreamLoadContext* ctx) {
     ctx->start_write_data_nanos = MonotonicNanos();
     LOG(INFO) << "begin to execute job. label=" << ctx->label << ", txn_id=" << ctx->txn_id
               << ", query_id=" << print_id(ctx->put_result.params.params.query_id);
-    auto st = _exec_env->fragment_mgr()->exec_plan_fragment(
+    auto st = _exec_env->fragment_mgr()->exec_plan_fragment( // 执行stream load的fragment
             ctx->put_result.params, [ctx](PlanFragmentExecutor* executor) {
                 ctx->commit_infos = std::move(executor->runtime_state()->tablet_commit_infos());
                 Status status = executor->status();
@@ -120,28 +121,29 @@ Status StreamLoadExecutor::execute_plan_fragment(StreamLoadContext* ctx) {
     return Status::OK();
 }
 
+/*通过Thrift向FE发送begin_txn的rpc请求*/
 Status StreamLoadExecutor::begin_txn(StreamLoadContext* ctx) {
     DorisMetrics::instance()->txn_begin_request_total.increment(1);
 
-    TLoadTxnBeginRequest request;
+    TLoadTxnBeginRequest request; // 定义begin_txn的thrift RPC请求
     set_request_auth(&request, ctx->auth);
-    request.db = ctx->db;
-    request.tbl = ctx->table;
-    request.label = ctx->label;
+    request.db = ctx->db;         // 为rpc请求设置db
+    request.tbl = ctx->table;     // 为rpc请求设置table
+    request.label = ctx->label;   // 为rpc请求设置label
     // set timestamp
-    request.__set_timestamp(GetCurrentTimeMicros());
+    request.__set_timestamp(GetCurrentTimeMicros()); // 为rpc请求设置时间戳
     if (ctx->timeout_second != -1) {
-        request.__set_timeout(ctx->timeout_second);
+        request.__set_timeout(ctx->timeout_second);  // 为rpc请求设置超时时间
     }
-    request.__set_request_id(ctx->id.to_thrift());
+    request.__set_request_id(ctx->id.to_thrift());   // 为rpc请求设置id
 
-    TNetworkAddress master_addr = _exec_env->master_info()->network_address;
+    TNetworkAddress master_addr = _exec_env->master_info()->network_address; // 获取master的网络地址
     TLoadTxnBeginResult result;
 #ifndef BE_TEST
-    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>(
+    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>( // 通过rpc向FE发送begin_txn的请求
             master_addr.hostname, master_addr.port,
             [&request, &result](FrontendServiceConnection& client) {
-                client->loadTxnBegin(result, request);
+                client->loadTxnBegin(result, request);           // RPC的结果通过result返回
             }));
 #else
     result = k_stream_load_begin_result;
@@ -155,16 +157,17 @@ Status StreamLoadExecutor::begin_txn(StreamLoadContext* ctx) {
         }
         return status;
     }
-    ctx->txn_id = result.txnId;
+    ctx->txn_id = result.txnId; // 获取FE返回的txn id
     ctx->need_rollback = true;
 
     return Status::OK();
 }
 
+/*通过Thrift向FE发送commit_txn的rpc请求*/
 Status StreamLoadExecutor::commit_txn(StreamLoadContext* ctx) {
     DorisMetrics::instance()->txn_commit_request_total.increment(1);
 
-    TLoadTxnCommitRequest request;
+    TLoadTxnCommitRequest request;  // 定义commit_txn的thrift RPC请求
     set_request_auth(&request, ctx->auth);
     request.db = ctx->db;
     request.tbl = ctx->table;
@@ -184,10 +187,10 @@ Status StreamLoadExecutor::commit_txn(StreamLoadContext* ctx) {
     TNetworkAddress master_addr = _exec_env->master_info()->network_address;
     TLoadTxnCommitResult result;
 #ifndef BE_TEST
-    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>(
+    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>(  // 通过rpc向FE发送commit_txn的请求
             master_addr.hostname, master_addr.port,
             [&request, &result](FrontendServiceConnection& client) {
-                client->loadTxnCommit(result, request);
+                client->loadTxnCommit(result, request);   // RPC的结果通过result返回
             },
             config::txn_commit_rpc_timeout_ms));
 #else
@@ -206,15 +209,16 @@ Status StreamLoadExecutor::commit_txn(StreamLoadContext* ctx) {
         return status;
     }
     // commit success, set need_rollback to false
-    ctx->need_rollback = false;
+    ctx->need_rollback = false; // commit成功，将need_rollback设为false
     return Status::OK();
 }
 
+/*通过Thrift向FE发送rollback_txn的rpc请求*/
 void StreamLoadExecutor::rollback_txn(StreamLoadContext* ctx) {
     DorisMetrics::instance()->txn_rollback_request_total.increment(1);
 
     TNetworkAddress master_addr = _exec_env->master_info()->network_address;
-    TLoadTxnRollbackRequest request;
+    TLoadTxnRollbackRequest request;       // 定义rollback_txn的thrift RPC请求
     set_request_auth(&request, ctx->auth);
     request.db = ctx->db;
     request.tbl = ctx->table;
@@ -230,10 +234,10 @@ void StreamLoadExecutor::rollback_txn(StreamLoadContext* ctx) {
 
     TLoadTxnRollbackResult result;
 #ifndef BE_TEST
-    auto rpc_st = ThriftRpcHelper::rpc<FrontendServiceClient>(
+    auto rpc_st = ThriftRpcHelper::rpc<FrontendServiceClient>(  // 通过rpc向FE发送rollback_txn的请求
             master_addr.hostname, master_addr.port,
             [&request, &result](FrontendServiceConnection& client) {
-                client->loadTxnRollback(result, request);
+                client->loadTxnRollback(result, request);  // RPC的结果通过result返回
             });
     if (!rpc_st.ok()) {
         LOG(WARNING) << "transaction rollback failed. errmsg=" << rpc_st.get_error_msg()
@@ -244,6 +248,7 @@ void StreamLoadExecutor::rollback_txn(StreamLoadContext* ctx) {
 #endif
 }
 
+/*对routine load和mini load收集load的统计数据*/
 bool StreamLoadExecutor::collect_load_stat(StreamLoadContext* ctx, TTxnCommitAttachment* attach) {
     if (ctx->load_type != TLoadType::ROUTINE_LOAD && ctx->load_type != TLoadType::MINI_LOAD) {
         // currently, only routine load and mini load need to be set attachment

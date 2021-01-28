@@ -101,6 +101,7 @@ StreamLoadAction::StreamLoadAction(ExecEnv* exec_env) : _exec_env(exec_env) {
 StreamLoadAction::~StreamLoadAction() {
 }
 
+/*on_header()中执行stream load结束之后，BE通过ev_http_server的on_request()函数调用handle()函数*/
 void StreamLoadAction::handle(HttpRequest* req) {
     StreamLoadContext* ctx = (StreamLoadContext*) req->handler_ctx();
     if (ctx == nullptr) {
@@ -119,7 +120,7 @@ void StreamLoadAction::handle(HttpRequest* req) {
 
     if (!ctx->status.ok() && ctx->status.code() != TStatusCode::PUBLISH_TIMEOUT) {
         if (ctx->need_rollback) {
-            _exec_env->stream_load_executor()->rollback_txn(ctx);
+            _exec_env->stream_load_executor()->rollback_txn(ctx); // 通过rpc向FE发送rollback事务的请求
             ctx->need_rollback = false;
         }
         if (ctx->body_sink.get() != nullptr) {
@@ -128,7 +129,7 @@ void StreamLoadAction::handle(HttpRequest* req) {
     }
 
     auto str = ctx->to_json();
-    HttpChannel::send_reply(req, str);
+    HttpChannel::send_reply(req, str); // 发送stream load的执行结果给http客户端
 
     // update statstics
     streaming_load_requests_total.increment(1);
@@ -155,16 +156,17 @@ Status StreamLoadAction::_handle(StreamLoadContext* ctx) {
     }
 
     // wait stream load finish
-    RETURN_IF_ERROR(ctx->future.get());
+    RETURN_IF_ERROR(ctx->future.get()); // 等待stream load结束
 
     // If put file succeess we need commit this load
     int64_t commit_and_publish_start_time = MonotonicNanos();
-    RETURN_IF_ERROR(_exec_env->stream_load_executor()->commit_txn(ctx));
+    RETURN_IF_ERROR(_exec_env->stream_load_executor()->commit_txn(ctx)); // 通过rpc向FE发送commit以及publish事务的请求
     ctx->commit_and_publish_txn_cost_nanos = MonotonicNanos() - commit_and_publish_start_time;
 
     return Status::OK();
 }
 
+/*接收FE重定向来的stream load请求，执行stream load*/
 int StreamLoadAction::on_header(HttpRequest* req) {
     streaming_load_current_processing.increment(1);
 
@@ -185,7 +187,7 @@ int StreamLoadAction::on_header(HttpRequest* req) {
     LOG(INFO) << "new income streaming load request." << ctx->brief()
               << ", db=" << ctx->db << ", tbl=" << ctx->table;
 
-    auto st = _on_header(req, ctx);
+    auto st = _on_header(req, ctx); // 执行stream load
     if (!st.ok()) {
         ctx->status = st;
         if (ctx->need_rollback) {
@@ -203,6 +205,7 @@ int StreamLoadAction::on_header(HttpRequest* req) {
     return 0;
 }
 
+/*执行stream load*/
 Status StreamLoadAction::_on_header(HttpRequest* http_req, StreamLoadContext* ctx) {
     // auth information
     if (!parse_basic_auth(*http_req, &ctx->auth)) {
@@ -251,11 +254,11 @@ Status StreamLoadAction::_on_header(HttpRequest* http_req, StreamLoadContext* ct
 
     // begin transaction
     int64_t begin_txn_start_time = MonotonicNanos();
-    RETURN_IF_ERROR(_exec_env->stream_load_executor()->begin_txn(ctx));
+    RETURN_IF_ERROR(_exec_env->stream_load_executor()->begin_txn(ctx)); // 通过rpc向FE发送begin_txn的请求
     ctx->begin_txn_cost_nanos = MonotonicNanos() - begin_txn_start_time;
 
     // process put file
-    return _process_put(http_req, ctx);
+    return _process_put(http_req, ctx); // 处理文件put
 }
 
 void StreamLoadAction::on_chunk_data(HttpRequest* req) {
@@ -304,24 +307,24 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* 
     ctx->use_streaming = is_format_support_streaming(ctx->format);
 
     // put request
-    TStreamLoadPutRequest request;
+    TStreamLoadPutRequest request; // 定义load put的thrift RPC请求
     set_request_auth(&request, ctx->auth);
-    request.db = ctx->db;
-    request.tbl = ctx->table;
-    request.txnId = ctx->txn_id;
-    request.formatType = ctx->format;
-    request.__set_loadId(ctx->id.to_thrift());
+    request.db = ctx->db;                      // 为rpc请求设置db
+    request.tbl = ctx->table;                  // 为rpc请求设置table
+    request.txnId = ctx->txn_id;               // 为rpc请求设置txn_id
+    request.formatType = ctx->format;          // 为rpc请求设置格式
+    request.__set_loadId(ctx->id.to_thrift()); // 为rpc请求设置RPC id
     if (ctx->use_streaming) {
         auto pipe = std::make_shared<StreamLoadPipe>();
         RETURN_IF_ERROR(_exec_env->load_stream_mgr()->put(ctx->id, pipe));
-        request.fileType = TFileType::FILE_STREAM;
+        request.fileType = TFileType::FILE_STREAM;           // 为rpc请求设置文件类型为stream文件
         ctx->body_sink = pipe;
     } else {
         RETURN_IF_ERROR(_data_saved_path(http_req, &request.path));
         auto file_sink = std::make_shared<MessageBodyFileSink>(request.path);
         RETURN_IF_ERROR(file_sink->open());
         request.__isset.path = true;
-        request.fileType = TFileType::FILE_LOCAL;
+        request.fileType = TFileType::FILE_LOCAL;            // 为rpc请求设置文件类型为本地文件
         ctx->body_sink = file_sink;
     }
     if (!http_req->header(HTTP_COLUMNS).empty()) {
@@ -388,17 +391,17 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* 
     }
     request.__set_thrift_rpc_timeout_ms(config::thrift_rpc_timeout_ms);
     // plan this load
-    TNetworkAddress master_addr = _exec_env->master_info()->network_address;
+    TNetworkAddress master_addr = _exec_env->master_info()->network_address; // 获取master的网络地址
 #ifndef BE_TEST
     if (!http_req->header(HTTP_MAX_FILTER_RATIO).empty()) {
         ctx->max_filter_ratio = strtod(http_req->header(HTTP_MAX_FILTER_RATIO).c_str(), nullptr);
     }
 
     int64_t stream_load_put_start_time = MonotonicNanos();
-    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>(
+    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>(   // 通过rpc向FE发送load put的请求
             master_addr.hostname, master_addr.port,
             [&request, ctx] (FrontendServiceConnection& client) {
-                client->streamLoadPut(ctx->put_result, request);
+                client->streamLoadPut(ctx->put_result, request);   // RPC的结果通过ctx->put_result返回
             }));
     ctx->stream_load_put_cost_nanos = MonotonicNanos() - stream_load_put_start_time;
 #else
@@ -417,7 +420,7 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* 
         return Status::OK();
     }
 
-    return _exec_env->stream_load_executor()->execute_plan_fragment(ctx);
+    return _exec_env->stream_load_executor()->execute_plan_fragment(ctx); // 执行stream load的fragment计划
 }
 
 Status StreamLoadAction::_data_saved_path(HttpRequest* req, std::string* file_path) {

@@ -207,7 +207,7 @@ void DeltaWriter::_reset_mem_table() {
                                   _mem_tracker.get()));//智能指针shared_ptr的reset()函数。p.reset(q)是将智能指针p重置为q
 }
 
-/*关闭DeltaWriter*/
+/*关闭DeltaWriter，只是完成了flush任务的提交*/
 OLAPStatus DeltaWriter::close() {
     if (!_is_init) {
         // if this delta writer is not initialized, but close() is called.
@@ -227,7 +227,7 @@ OLAPStatus DeltaWriter::close() {
 OLAPStatus DeltaWriter::close_wait(google::protobuf::RepeatedPtrField<PTabletInfo>* tablet_vec) {
     DCHECK(_is_init) << "delta writer is supposed be to initialized before close_wait() being called";
     // return error if previous flush failed
-    RETURN_NOT_OK(_flush_token->wait());
+    RETURN_NOT_OK(_flush_token->wait()); // 等待flush结束
     DCHECK_EQ(_mem_tracker->consumption(), 0);
 
     // use rowset meta manager to save meta
