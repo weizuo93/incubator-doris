@@ -111,13 +111,15 @@ void StreamLoadAction::handle(HttpRequest* req) {
     // status already set to fail
     if (ctx->status.ok()) {
         ctx->status = _handle(ctx);
-        if (!ctx->status.ok() && ctx->status.code() != TStatusCode::PUBLISH_TIMEOUT) {
+        if (!ctx->status.ok() && ctx->status.code() != TStatusCode::PUBLISH_TIMEOUT) { // 表示commit失败
+            // 如果ctx->status.code()为TStatusCode::PUBLISH_TIMEOUT，则表示commit成功，但publish还没有完成
             LOG(WARNING) << "handle streaming load failed, id=" << ctx->id
                 << ", errmsg=" << ctx->status.get_error_msg();
         }
     }
     ctx->load_cost_nanos = MonotonicNanos() - ctx->start_nanos;
 
+    // 只要commit成功，就不允许rollback的，但是如果publish还没有完成，FE会持续进行publish的重试
     if (!ctx->status.ok() && ctx->status.code() != TStatusCode::PUBLISH_TIMEOUT) {
         if (ctx->need_rollback) {
             _exec_env->stream_load_executor()->rollback_txn(ctx); // 通过rpc向FE发送rollback事务的请求
@@ -160,7 +162,7 @@ Status StreamLoadAction::_handle(StreamLoadContext* ctx) {
 
     // If put file succeess we need commit this load
     int64_t commit_and_publish_start_time = MonotonicNanos();
-    RETURN_IF_ERROR(_exec_env->stream_load_executor()->commit_txn(ctx)); // 通过rpc向FE发送commit以及publish事务的请求
+    RETURN_IF_ERROR(_exec_env->stream_load_executor()->commit_txn(ctx)); // 通过rpc向FE发送commit事务的请求，FE端会分为commit和publish version两个阶段来执行
     ctx->commit_and_publish_txn_cost_nanos = MonotonicNanos() - commit_and_publish_start_time;
 
     return Status::OK();

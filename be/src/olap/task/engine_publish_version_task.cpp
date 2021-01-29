@@ -30,18 +30,19 @@ EnginePublishVersionTask::EnginePublishVersionTask(TPublishVersionRequest& publi
         _publish_version_req(publish_version_req),
         _error_tablet_ids(error_tablet_ids) {}
 
+/*执行publish version task*/
 OLAPStatus EnginePublishVersionTask::finish() {
     OLAPStatus res = OLAP_SUCCESS;
     int64_t transaction_id = _publish_version_req.transaction_id;
     LOG(INFO) << "begin to process publish version. transaction_id=" << transaction_id;
 
     // each partition
-    for (auto& par_ver_info : _publish_version_req.partition_version_infos) {
+    for (auto& par_ver_info : _publish_version_req.partition_version_infos) { // 遍历publish version相关的每一个partition
         int64_t partition_id = par_ver_info.partition_id;
         // get all partition related tablets and check whether the tablet have the related version
         std::set<TabletInfo> partition_related_tablet_infos;
         StorageEngine::instance()->tablet_manager()->get_partition_related_tablets(
-                partition_id, &partition_related_tablet_infos);
+                partition_id, &partition_related_tablet_infos); // 获取partition相关的所有tablet
         if (_publish_version_req.strict_mode && partition_related_tablet_infos.empty()) {
             LOG(INFO) << "could not find related tablet for partition " << partition_id
                       << ", skip publish version";
@@ -49,14 +50,14 @@ OLAPStatus EnginePublishVersionTask::finish() {
         }
 
         map<TabletInfo, RowsetSharedPtr> tablet_related_rs;
-        StorageEngine::instance()->txn_manager()->get_txn_related_tablets(
+        StorageEngine::instance()->txn_manager()->get_txn_related_tablets( // 获取partition下当前publish事务相关的所有tablet
                 transaction_id, partition_id, &tablet_related_rs);
 
         Version version(par_ver_info.version, par_ver_info.version);
         VersionHash version_hash = par_ver_info.version_hash;
 
         // each tablet
-        for (auto& tablet_rs : tablet_related_rs) {
+        for (auto& tablet_rs : tablet_related_rs) { // 遍历每一个tablet
             OLAPStatus publish_status = OLAP_SUCCESS;
             TabletInfo tablet_info = tablet_rs.first;
             RowsetSharedPtr rowset = tablet_rs.second;
@@ -77,7 +78,7 @@ OLAPStatus EnginePublishVersionTask::finish() {
                 continue;
             }
             TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(
-                    tablet_info.tablet_id, tablet_info.schema_hash, tablet_info.tablet_uid);
+                    tablet_info.tablet_id, tablet_info.schema_hash, tablet_info.tablet_uid); // 获取tablet
             if (tablet == nullptr) {
                 LOG(WARNING) << "can't get tablet when publish version. tablet_id=" << tablet_info.tablet_id
                              << " schema_hash=" << tablet_info.schema_hash;
@@ -87,7 +88,7 @@ OLAPStatus EnginePublishVersionTask::finish() {
             }
 
             publish_status = StorageEngine::instance()->txn_manager()->publish_txn(
-                    partition_id, tablet, transaction_id, version, version_hash);
+                    partition_id, tablet, transaction_id, version, version_hash); // 执行publish事务
             if (publish_status != OLAP_SUCCESS) {
                 LOG(WARNING) << "failed to publish version. rowset_id=" << rowset->rowset_id()
                              << ", tablet_id=" << tablet_info.tablet_id
@@ -98,7 +99,7 @@ OLAPStatus EnginePublishVersionTask::finish() {
             }
 
             // add visible rowset to tablet
-            publish_status = tablet->add_inc_rowset(rowset);
+            publish_status = tablet->add_inc_rowset(rowset); // 将rowset添加到tablet进行管理
             if (publish_status != OLAP_SUCCESS
                     && publish_status != OLAP_ERR_PUSH_VERSION_ALREADY_EXIST) {
                 LOG(WARNING) << "fail to add visible rowset to tablet. rowset_id="
