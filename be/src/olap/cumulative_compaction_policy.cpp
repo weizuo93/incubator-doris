@@ -214,11 +214,11 @@ int SizeBasedCumulativeCompactionPolicy::pick_input_rowsets(
     int transient_size = 0;
     *compaction_score = 0;
     int64_t total_size = 0;
-    for (size_t i = 0; i < candidate_rowsets.size(); ++i) { // 依次遍历每一个候选rowset
+    for (size_t i = 0; i < candidate_rowsets.size(); ++i) { // 依次遍历每一个候选rowset（循环退出的三种情况：遇到删除版本、选出的rowset的score之和到达上限或候选rowset遍历结束）
         RowsetSharedPtr rowset = candidate_rowsets[i];
         // check whether this rowset is delete version
         if (tablet->version_for_delete_predicate(rowset->version())) { // 判断当前rowset是否为数据删除版本
-            *last_delete_version = rowset->version(); // 记录最后一个数据删除版本
+            *last_delete_version = rowset->version(); // 记录上一个数据删除版本
             if (!input_rowsets->empty()) { // 当前数据删除版本之前还有其他版本，则对当前数据删除版本之前的其他rowset执行cumulative compaction
                 // we meet a delete version, and there were other versions before.
                 // we should compact those version before handling them over to base compaction
@@ -242,7 +242,7 @@ int SizeBasedCumulativeCompactionPolicy::pick_input_rowsets(
         input_rowsets->push_back(rowset); // 将当前rowset添加到input_rowsets中
     }
 
-    if (total_size >= promotion_size) { // 如果选出的所有rowset大小之和达到promotion_size
+    if (total_size >= promotion_size) { // 如果选出的所有rowset大小之和达到promotion_size，函数退出
         return transient_size;
     }
 
