@@ -624,13 +624,13 @@ DelPredicateArray TabletMeta::delete_predicates() const {
     return _del_pred_array;
 }
 
-/*参数传入的rowset meta版本是否存在于DelPredicateArray类型的成员变量_del_pred_array中*/
+/*参数传入的rowset meta版本是否为数据删除的版本（数据删除的版本都保存在于DelPredicateArray类型的成员变量_del_pred_array中）*/
 bool TabletMeta::version_for_delete_predicate(const Version& version) {
-    if (version.first != version.second) {
+    if (version.first != version.second) { // 数据删除的版本的first和second相同
         return false;
     }
 
-    for (auto& del_pred : _del_pred_array) {
+    for (auto& del_pred : _del_pred_array) { // 依次遍历成员变量_del_pred_array，判断参数输入的版本是否在其中存在
         if (del_pred.version() == version.first) {
             return true;
         }

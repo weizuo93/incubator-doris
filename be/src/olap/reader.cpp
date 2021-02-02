@@ -1072,7 +1072,7 @@ void Reader::_init_load_bf_columns(const ReaderParams& read_params) {
 
 /*根据参数传入的read_params初始化_delete_handler*/
 OLAPStatus Reader::_init_delete_condition(const ReaderParams& read_params) {
-    if (read_params.reader_type != READER_CUMULATIVE_COMPACTION) { // 如果reader类型不是READER_CUMULATIVE_COMPACTION
+    if (read_params.reader_type != READER_CUMULATIVE_COMPACTION) { // 如果reader类型不是READER_CUMULATIVE_COMPACTION，cumulative compaction不会过滤删除的数据行
         _tablet->obtain_header_rdlock();
         OLAPStatus ret = _delete_handler.init(_tablet->tablet_schema(), // 初始化成员变量_delete_handler
                                               _tablet->delete_predicates(),

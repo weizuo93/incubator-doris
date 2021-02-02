@@ -480,6 +480,7 @@ void Tablet::add_delete_predicate(const DeletePredicatePB& delete_predicate, int
 
 // TODO(lingbin): what is the difference between version_for_delete_predicate() and
 // version_for_load_deletion()? should at least leave a comment
+/*判断参数输入的版本是否为删除数据的版本*/
 bool Tablet::version_for_delete_predicate(const Version& version) {
     return _tablet_meta->version_for_delete_predicate(version);
 }
