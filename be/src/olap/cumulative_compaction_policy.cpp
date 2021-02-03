@@ -138,7 +138,7 @@ void SizeBasedCumulativeCompactionPolicy::update_cumulative_point(
         // if rowsets have not delete version, check output_rowset total disk size
         // satisfies promotion size.
         size_t total_size = output_rowset->rowset_meta()->total_disk_size(); // 如果不存在删除数据的版本，获取输出rowset的大小
-        if (total_size >= _tablet_size_based_promotion_size) { // 如果输出rowset大小超过_tablet_size_based_promotion_size，则更新cumulative point
+        if (total_size >= _tablet_size_based_promotion_size) { // 如果输出rowset大小超过_tablet_size_based_promotion_size（base rowset大小的0.05倍，最大1024MB，最小64MB），则更新cumulative point
             tablet->set_cumulative_layer_point(output_rowset->end_version() + 1);
         }
     }
@@ -218,7 +218,7 @@ int SizeBasedCumulativeCompactionPolicy::pick_input_rowsets(
         RowsetSharedPtr rowset = candidate_rowsets[i];
         // check whether this rowset is delete version
         if (tablet->version_for_delete_predicate(rowset->version())) { // 判断当前rowset是否为数据删除版本
-            *last_delete_version = rowset->version(); // 记录上一个数据删除版本
+            *last_delete_version = rowset->version(); // 记录本次数据删除版本
             if (!input_rowsets->empty()) { // 当前数据删除版本之前还有其他版本，则对当前数据删除版本之前的其他rowset执行cumulative compaction
                 // we meet a delete version, and there were other versions before.
                 // we should compact those version before handling them over to base compaction
@@ -318,14 +318,16 @@ int SizeBasedCumulativeCompactionPolicy::_level_size(const int64_t size) {
     return 0;
 }
 
+/*更新cumulative point*/
 void NumBasedCumulativeCompactionPolicy::update_cumulative_point(
         Tablet* tablet, const std::vector<RowsetSharedPtr>& input_rowsets,
         RowsetSharedPtr _output_rowset, Version& last_delete_version) {
     // use the version after end version of the last input rowsets to update cumulative point
-    int64_t cumulative_point = input_rowsets.back()->end_version() + 1;
+    int64_t cumulative_point = input_rowsets.back()->end_version() + 1; // 使用参与本次compaction的最后一个rowset的下一个版本作为新的cumulative_point
     tablet->set_cumulative_layer_point(cumulative_point);
 }
 
+/*选择执行cumulative comapction的rowset*/
 int NumBasedCumulativeCompactionPolicy::pick_input_rowsets(
         Tablet* tablet, const std::vector<RowsetSharedPtr>& candidate_rowsets,
         const int64_t max_compaction_score, const int64_t min_compaction_score,
@@ -333,16 +335,16 @@ int NumBasedCumulativeCompactionPolicy::pick_input_rowsets(
         size_t* compaction_score) {
     *compaction_score = 0;
     int transient_size = 0;
-    for (size_t i = 0; i < candidate_rowsets.size(); ++i) {
+    for (size_t i = 0; i < candidate_rowsets.size(); ++i) { // 依次遍历每一个候选rowset（循环退出的三种情况：遇到删除版本、选出的rowset的score之和到达上限或候选rowset遍历结束）
         RowsetSharedPtr rowset = candidate_rowsets[i];
         // check whether this rowset is delete version
-        if (tablet->version_for_delete_predicate(rowset->version())) {
-            *last_delete_version = rowset->version();
-            if (!input_rowsets->empty()) {
+        if (tablet->version_for_delete_predicate(rowset->version())) { // 判断当前rowset是否为数据删除版本
+            *last_delete_version = rowset->version(); // 记录本次数据删除版本
+            if (!input_rowsets->empty()) { // 当前数据删除版本之前还有其他版本，则对当前数据删除版本之前的其他rowset执行cumulative compaction
                 // we meet a delete version, and there were other versions before.
                 // we should compact those version before handling them over to base compaction
                 break;
-            } else {
+            } else { // 当前数据删除版本之前没有其他版本，则跳过当前数据删除版本
                 // we meet a delete version, and no other versions before, skip it and continue
                 input_rowsets->clear();
                 transient_size = 0;
@@ -350,7 +352,7 @@ int NumBasedCumulativeCompactionPolicy::pick_input_rowsets(
                 continue;
             }
         }
-        if (*compaction_score >= max_compaction_score) {
+        if (*compaction_score >= max_compaction_score) { // 如果score已经到达上限(config::max_cumulative_compaction_num_singleton_deltas默认设置为1000)
             // got enough segments
             break;
         }
@@ -359,28 +361,31 @@ int NumBasedCumulativeCompactionPolicy::pick_input_rowsets(
         transient_size += 1;
     }
 
-    if (input_rowsets->empty()) {
+    if (input_rowsets->empty()) { // 判断input_rowsets是否为空
         return transient_size;
     }
 
     // if we have a sufficient number of segments,
     // or have other versions before encountering the delete version, we should process the compaction.
+    // 如果遇到了数据删除版本，或者选出的rowset的score达到了最小阈值，则可以进行cumulative compaction，
+    // 否则，如果没有候选rowset中不包含数据删除版本，并且所有候选rowset的score之和未达到了最小阈值，则不进行本次的cumulative compaction，
     if (last_delete_version->first == -1 && *compaction_score < min_compaction_score) {
         input_rowsets->clear();
     }
     return transient_size;
 }
 
+/*计算compaction score*/
 void NumBasedCumulativeCompactionPolicy::calc_cumulative_compaction_score(
         const std::vector<RowsetMetaSharedPtr>& all_rowsets, const int64_t current_cumulative_point,
         uint32_t* score) {
     bool base_rowset_exist = false;
     const int64_t point = current_cumulative_point;
-    for (auto& rs_meta : all_rowsets) {
+    for (auto& rs_meta : all_rowsets) { // 依次遍历tablet中所有的rowset
         if (rs_meta->start_version() == 0) {
-            base_rowset_exist = true;
+            base_rowset_exist = true; // base rowset存在
         }
-        if (rs_meta->start_version() < point) {
+        if (rs_meta->start_version() < point) { // 如果某个rowset版本位于cumulative_point之前，则继续遍历下一个rowset
             // all_rs_metas() is not sorted, so we use _continue_ other than _break_ here.
             continue;
         }
@@ -389,11 +394,12 @@ void NumBasedCumulativeCompactionPolicy::calc_cumulative_compaction_score(
 
     // If base version does not exist, it may be that tablet is doing alter table.
     // Do not select it and set *score = 0
-    if (!base_rowset_exist) {
+    if (!base_rowset_exist) { // 判断base rowset是否存在
         *score = 0;
     }
 }
 
+/*计算tablet的cumulative point*/
 void NumBasedCumulativeCompactionPolicy::calculate_cumulative_point(
         Tablet* tablet, const std::vector<RowsetMetaSharedPtr>& all_metas,
         int64_t current_cumulative_point, int64_t* ret_cumulative_point) {
@@ -405,7 +411,7 @@ void NumBasedCumulativeCompactionPolicy::calculate_cumulative_point(
     }
 
     std::list<RowsetMetaSharedPtr> existing_rss;
-    for (auto& rs : all_metas) {
+    for (auto& rs : all_metas) { // 遍历tablet下所有的rowset meta
         existing_rss.emplace_back(rs);
     }
 
@@ -413,17 +419,17 @@ void NumBasedCumulativeCompactionPolicy::calculate_cumulative_point(
     existing_rss.sort([](const RowsetMetaSharedPtr& a, const RowsetMetaSharedPtr& b) {
         // simple because 2 versions are certainly not overlapping
         return a->version().first < b->version().first;
-    });
+    });  // 按照版本对rowset进行排序
 
     int64_t prev_version = -1;
-    for (const RowsetMetaSharedPtr& rs : existing_rss) {
-        if (rs->version().first > prev_version + 1) {
+    for (const RowsetMetaSharedPtr& rs : existing_rss) { // 按照版本号遍历所有rowset
+        if (rs->version().first > prev_version + 1) { // 判断是否存在版本缺失
             // There is a hole, do not continue
             break;
         }
         // break the loop if segments in this rowset is overlapping, or is a singleton.
-        if (rs->is_segments_overlapping() || rs->is_singleton_delta()) {
-            *ret_cumulative_point = rs->version().first;
+        if (rs->is_segments_overlapping() || rs->is_singleton_delta()) { // 判断是否遇到第一个未参与合并的rowset或第一个存在segment文件重叠的rowset
+            *ret_cumulative_point = rs->version().first; // 将第一个未参与合并的rowset版本的first作为cumulative point
             break;
         }
 
@@ -432,39 +438,44 @@ void NumBasedCumulativeCompactionPolicy::calculate_cumulative_point(
     }
 }
 
+/*从tablet的所有rowset中选择候选rowset*/
+// 选择tablet中_cumulative_point之后，另外满足创建时间距离当前时间大于某一个时间间隔（skip_window_sec）的所有rowset或创建时间
+// 距离当前时间小于特定时间间隔但之前参与过合并的非单一版本的rowset作为cumulative compaction的候选rowset
 void CumulativeCompactionPolicy::pick_candidate_rowsets(
         int64_t skip_window_sec,
         const std::unordered_map<Version, RowsetSharedPtr, HashOfVersion>& rs_version_map,
         int64_t cumulative_point, std::vector<RowsetSharedPtr>* candidate_rowsets) {
     int64_t now = UnixSeconds();
-    for (auto& it : rs_version_map) {
+    for (auto& it : rs_version_map) { // 遍历tablet中的每一个rowset
         // find all rowset version greater than cumulative_point and skip the create time in skip_window_sec
-        if (it.first.first >= cumulative_point
-            && ((it.second->creation_time() + skip_window_sec < now)
+        if (it.first.first >= cumulative_point                       // 当前rowset的版本是否在cumulative_point之后
+            && ((it.second->creation_time() + skip_window_sec < now) // 当前rowset的版本的创建时间距离当前时刻是否超过了特定的时间间隔
             // this case means a rowset has been compacted before which is not a new published rowset, so it should participate compaction
-            || (it.first.first != it.first.second))) {
+            || (it.first.first != it.first.second))) {               // 判断当前rowset是否参与过版本合并
             candidate_rowsets->push_back(it.second);
         }
     }
-    std::sort(candidate_rowsets->begin(), candidate_rowsets->end(), Rowset::comparator);
+    std::sort(candidate_rowsets->begin(), candidate_rowsets->end(), Rowset::comparator); // 对选出的rowset按版本进行排序
 }
 
+/*根据compaction的策略类型创建CumulativeCompactionPolicy对象*/
 std::unique_ptr<CumulativeCompactionPolicy>
 CumulativeCompactionPolicyFactory::create_cumulative_compaction_policy(std::string type) {
     CompactionPolicy policy_type;
-    _parse_cumulative_compaction_policy(type, &policy_type);
+    _parse_cumulative_compaction_policy(type, &policy_type); // 根据参数将compaction的策略进行解析为NUM_BASED或SIZE_BASED
 
     if (policy_type == NUM_BASED_POLICY) {
         return std::unique_ptr<CumulativeCompactionPolicy>(
-                new NumBasedCumulativeCompactionPolicy());
+                new NumBasedCumulativeCompactionPolicy()); // 创建NumBasedCumulativeCompactionPolicy对象
     } else if (policy_type == SIZE_BASED_POLICY) {
         return std::unique_ptr<CumulativeCompactionPolicy>(
-                new SizeBasedCumulativeCompactionPolicy());
+                new SizeBasedCumulativeCompactionPolicy()); // 创建SizeBasedCumulativeCompactionPolicy对象
     }
 
     return std::unique_ptr<CumulativeCompactionPolicy>(new NumBasedCumulativeCompactionPolicy());
 }
 
+/*根据参数将compaction的策略进行解析为NUM_BASED或SIZE_BASED*/
 void CumulativeCompactionPolicyFactory::_parse_cumulative_compaction_policy(
         std::string type, CompactionPolicy* policy_type) {
     boost::to_upper(type);
