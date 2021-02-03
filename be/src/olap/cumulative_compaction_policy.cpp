@@ -92,6 +92,7 @@ void SizeBasedCumulativeCompactionPolicy::calculate_cumulative_point(
         }
 
         // check the rowset is whether less than promotion size
+        // rs->version().first != 0条件可以删除，因为如果rs->version().first = 0的话，rs->total_disk_size() < promotion_size不可能满足
         if (!is_delete && rs->version().first != 0 && rs->total_disk_size() < promotion_size) { // 当前rowset不是base rowset并且rowset大小小于promotion_size（当前rowset不是数据删除的版本）
             *ret_cumulative_point = rs->version().first; // cumulative point不再后移，本次计算的cumulative point为当前版本的first
             break;
