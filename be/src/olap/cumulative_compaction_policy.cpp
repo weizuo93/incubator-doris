@@ -369,7 +369,7 @@ int NumBasedCumulativeCompactionPolicy::pick_input_rowsets(
     // if we have a sufficient number of segments,
     // or have other versions before encountering the delete version, we should process the compaction.
     // 如果遇到了数据删除版本，或者选出的rowset的score达到了最小阈值，则可以进行cumulative compaction，
-    // 否则，如果没有候选rowset中不包含数据删除版本，并且所有候选rowset的score之和未达到了最小阈值，则不进行本次的cumulative compaction，
+    // 否则，如果候选rowset中不包含数据删除版本，并且所有候选rowset的score之和未达到了最小阈值，则不进行本次的cumulative compaction，
     if (last_delete_version->first == -1 && *compaction_score < min_compaction_score) {
         input_rowsets->clear();
     }

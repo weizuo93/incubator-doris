@@ -304,6 +304,7 @@ void DataStreamSender::Channel::close_wait(RuntimeState* state) {
     _batch.reset();
 }
 
+/*DataStreamSender的构造函数*/
 DataStreamSender::DataStreamSender(
             ObjectPool* pool, int sender_id,
             const RowDescriptor& row_desc, const TDataStreamSink& sink,
@@ -327,7 +328,7 @@ DataStreamSender::DataStreamSender(
             || sink.output_partition.type == TPartitionType::RANDOM
             || sink.output_partition.type == TPartitionType::RANGE_PARTITIONED);
     // TODO: use something like google3's linked_ptr here (scoped_ptr isn't copyable)
-    for (int i = 0; i < destinations.size(); ++i) {
+    for (int i = 0; i < destinations.size(); ++i) { // 依次遍历每一个数据发送的destination
         // Select first dest as transfer chain.
         bool is_transfer_chain = (i == 0);
         _channel_shared_ptrs.emplace_back(
@@ -335,8 +336,8 @@ DataStreamSender::DataStreamSender(
                         destinations[i].brpc_server,
                         destinations[i].fragment_instance_id,
                         sink.dest_node_id, per_channel_buffer_size, 
-                        is_transfer_chain, send_query_statistics_with_every_batch));
-        _channels.push_back(_channel_shared_ptrs[i].get());
+                        is_transfer_chain, send_query_statistics_with_every_batch)); // 为当前destination创建一个channel
+        _channels.push_back(_channel_shared_ptrs[i].get()); // 将当前destination的channel添加到成员变量_channels中
     }
 }
 
@@ -346,13 +347,14 @@ static bool compare_part_use_range(const PartitionInfo* v1, const PartitionInfo*
     return v1->range() < v2->range();
 }
 
+/*初始化DataStreamSender*/
 Status DataStreamSender::init(const TDataSink& tsink) {
-    RETURN_IF_ERROR(DataSink::init(tsink));
-    const TDataStreamSink& t_stream_sink = tsink.stream_sink;
-    if (_part_type == TPartitionType::HASH_PARTITIONED) {
+    RETURN_IF_ERROR(DataSink::init(tsink)); // 初始化DataSink
+    const TDataStreamSink& t_stream_sink = tsink.stream_sink; // 获取stream sink的类型
+    if (_part_type == TPartitionType::HASH_PARTITIONED) { // hash partition
         RETURN_IF_ERROR(Expr::create_expr_trees(
                 _pool, t_stream_sink.output_partition.partition_exprs, &_partition_expr_ctxs));
-    } else if (_part_type == TPartitionType::RANGE_PARTITIONED) {
+    } else if (_part_type == TPartitionType::RANGE_PARTITIONED) { // range partition
         // Range partition
         // Partition Exprs
         RETURN_IF_ERROR(Expr::create_expr_trees(
@@ -369,13 +371,14 @@ Status DataStreamSender::init(const TDataSink& tsink) {
             _partition_infos.push_back(info);
         }
         // partitions should be in ascending order
-        std::sort(_partition_infos.begin(), _partition_infos.end(), compare_part_use_range);
+        std::sort(_partition_infos.begin(), _partition_infos.end(), compare_part_use_range); // 对_partition_infos按照升序排列
     } else {
     }
 
     return Status::OK();
 }
 
+/*DataStreamSender的准备工作*/
 Status DataStreamSender::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(DataSink::prepare(state));
     _state = state;
@@ -421,12 +424,14 @@ Status DataStreamSender::prepare(RuntimeState* state) {
     return Status::OK();
 }
 
+/*DataStreamSender的析构函数*/
 DataStreamSender::~DataStreamSender() {
     // TODO: check that sender was either already closed() or there was an error
     // on some channel
     _channel_shared_ptrs.clear();
 }
 
+/*打开DataStreamSender*/
 Status DataStreamSender::open(RuntimeState* state) {
     DCHECK(state != NULL);
     RETURN_IF_ERROR(Expr::open(_partition_expr_ctxs, state));
@@ -436,13 +441,14 @@ Status DataStreamSender::open(RuntimeState* state) {
     return Status::OK();
 }
 
+/*发送一个batch的数据*/
 Status DataStreamSender::send(RuntimeState* state, RowBatch* batch) {
     SCOPED_TIMER(_profile->total_time_counter());
 
     // Unpartition or _channel size
     if (_part_type == TPartitionType::UNPARTITIONED || _channels.size() == 1) {
-        RETURN_IF_ERROR(serialize_batch(batch, _current_pb_batch, _channels.size()));
-        for (auto channel : _channels) {
+        RETURN_IF_ERROR(serialize_batch(batch, _current_pb_batch, _channels.size())); // 将数据batch序列化
+        for (auto channel : _channels) { // 依次遍历每一个channel，发送batch数据
             RETURN_IF_ERROR(channel->send_batch(_current_pb_batch));
         }
         _current_pb_batch = (_current_pb_batch == &_pb_batch1 ? &_pb_batch2 : &_pb_batch1);
@@ -450,8 +456,8 @@ Status DataStreamSender::send(RuntimeState* state, RowBatch* batch) {
         // Round-robin batches among channels. Wait for the current channel to finish its
         // rpc before overwriting its batch.
         Channel* current_channel = _channels[_current_channel_idx];
-        RETURN_IF_ERROR(serialize_batch(batch, current_channel->pb_batch()));
-        RETURN_IF_ERROR(current_channel->send_batch(current_channel->pb_batch()));
+        RETURN_IF_ERROR(serialize_batch(batch, current_channel->pb_batch()));      // 将数据batch序列化
+        RETURN_IF_ERROR(current_channel->send_batch(current_channel->pb_batch())); // 发送batch数据
         _current_channel_idx = (_current_channel_idx + 1) % _channels.size();
     } else if (_part_type == TPartitionType::HASH_PARTITIONED) {
         // hash-partition batch's rows across channels
@@ -594,6 +600,7 @@ Status DataStreamSender::compute_range_part_code(
     return Status::OK();
 }
 
+/*关闭DataStreamSender*/
 Status DataStreamSender::close(RuntimeState* state, Status exec_status) {
     // TODO: only close channels that didn't have any errors
     // make all channels close parallel
@@ -612,6 +619,7 @@ Status DataStreamSender::close(RuntimeState* state, Status exec_status) {
     return Status::OK();
 }
 
+/*序列化数据batch*/
 template<typename T>
 Status DataStreamSender::serialize_batch(RowBatch* src, T* dest, int num_receivers) {
     VLOG_ROW << "serializing " << src->num_rows() << " rows";
