@@ -229,7 +229,7 @@ Status DataStreamSender::Channel::send_batch(PRowBatch* batch, bool eos) {
 
     _closure->ref();
     _closure->cntl.set_timeout_ms(_brpc_timeout_ms);
-    _brpc_stub->transmit_data(&_closure->cntl, &_brpc_request, &_closure->result, _closure);
+    _brpc_stub->transmit_data(&_closure->cntl, &_brpc_request, &_closure->result, _closure); // 通过brpc发送数据batch
     if (batch != nullptr) {
         _brpc_request.release_row_batch();
     }

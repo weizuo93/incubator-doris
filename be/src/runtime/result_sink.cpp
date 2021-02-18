@@ -31,6 +31,7 @@
 
 namespace doris {
 
+/*ResultSink的构造函数*/
 ResultSink::ResultSink(const RowDescriptor& row_desc, const std::vector<TExpr>& t_output_expr,
                        const TResultSink& sink, int buffer_size)
     : _row_desc(row_desc),
@@ -62,6 +63,7 @@ Status ResultSink::prepare_exprs(RuntimeState* state) {
     return Status::OK();
 }
 
+/*数据发送前的准备工作*/
 Status ResultSink::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(DataSink::prepare(state));
     std::stringstream title;
@@ -73,10 +75,10 @@ Status ResultSink::prepare(RuntimeState* state) {
 
     // create sender
     RETURN_IF_ERROR(state->exec_env()->result_mgr()->create_sender(
-                state->fragment_instance_id(), _buf_size, &_sender));
+                state->fragment_instance_id(), _buf_size, &_sender)); // 创建sender
     
     // create writer based on sink type
-    switch (_sink_type) {
+    switch (_sink_type) { // 基于sink的类型创建writer
         case TResultSinkType::MYSQL_PROTOCAL:
             _writer.reset(new(std::nothrow) MysqlResultWriter(_sender.get(), _output_expr_ctxs, _profile));
             break;
@@ -88,18 +90,21 @@ Status ResultSink::prepare(RuntimeState* state) {
             return Status::InternalError("Unknown result sink type");
     }
 
-    RETURN_IF_ERROR(_writer->init(state));
+    RETURN_IF_ERROR(_writer->init(state)); // 初始化writer
     return Status::OK();
 }
 
+/*打开ResultSink*/
 Status ResultSink::open(RuntimeState* state) {
     return Expr::open(_output_expr_ctxs, state);
 }
 
+/*发送一个batch的数据*/
 Status ResultSink::send(RuntimeState* state, RowBatch* batch) {
     return _writer->append_row_batch(batch);
 }
 
+/*关闭ResultSink*/
 Status ResultSink::close(RuntimeState* state, Status exec_status) {
     if (_closed) {
         return Status::OK();
@@ -107,7 +112,7 @@ Status ResultSink::close(RuntimeState* state, Status exec_status) {
 
     Status final_status = exec_status;
     // close the writer
-    Status st = _writer->close();
+    Status st = _writer->close(); // 关闭writer
     if (!st.ok() && exec_status.ok()) {
         // close file writer failed, should return this error to client
         final_status = st;
@@ -116,7 +121,7 @@ Status ResultSink::close(RuntimeState* state, Status exec_status) {
     // close sender, this is normal path end
     if (_sender) {
         _sender->update_num_written_rows(_writer->get_written_rows());
-        _sender->close(final_status);
+        _sender->close(final_status); // 关闭sender
     }
     state->exec_env()->result_mgr()->cancel_at_time(time(NULL) + config::result_buffer_cancelled_interval_time, 
                                                     state->fragment_instance_id());
@@ -126,6 +131,7 @@ Status ResultSink::close(RuntimeState* state, Status exec_status) {
     return Status::OK();
 }
 
+/*设置query的统计数据*/
 void ResultSink::set_query_statistics(std::shared_ptr<QueryStatistics> statistics) {
     _sender->set_query_statistics(statistics);
 }

@@ -29,6 +29,7 @@
 
 namespace doris {
 
+/*ExchangeNode的构造函数*/
 ExchangeNode::ExchangeNode(
         ObjectPool* pool,
         const TPlanNode& tnode,
@@ -48,18 +49,21 @@ ExchangeNode::ExchangeNode(
     DCHECK(_is_merging || (_offset == 0));
 }
 
+/*初始化ExchangeNode*/
 Status ExchangeNode::init(const TPlanNode& tnode, RuntimeState* state) {
-    RETURN_IF_ERROR(ExecNode::init(tnode, state));
-    if (!_is_merging) {
+    RETURN_IF_ERROR(ExecNode::init(tnode, state)); // 初始化父类对象
+    if (!_is_merging) { // 不需要做聚合
         return Status::OK();
     }
 
-    RETURN_IF_ERROR(_sort_exec_exprs.init(tnode.exchange_node.sort_info, _pool));
+    // 需要做聚合
+    RETURN_IF_ERROR(_sort_exec_exprs.init(tnode.exchange_node.sort_info, _pool)); // 初始化_sort_exec_exprs对象
     _is_asc_order = tnode.exchange_node.sort_info.is_asc_order;
     _nulls_first = tnode.exchange_node.sort_info.nulls_first;
     return Status::OK();
 }
 
+/*ExchangeNode的准备工作*/
 Status ExchangeNode::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::prepare(state));
     _convert_row_batch_timer = ADD_TIMER(runtime_profile(), "ConvertRowBatchTime");
@@ -70,56 +74,62 @@ Status ExchangeNode::prepare(RuntimeState* state) {
             state, _input_row_desc,
             state->fragment_instance_id(), _id,
             _num_senders, config::exchg_node_buffer_size_bytes,
-            _runtime_profile.get(), _is_merging, _sub_plan_query_statistics_recvr);
-    if (_is_merging) {
+            _runtime_profile.get(), _is_merging, _sub_plan_query_statistics_recvr); // 创建DataStreamRecvr对象，并保存在成员变量_stream_recvr中
+    if (_is_merging) { // 需要做聚合
         RETURN_IF_ERROR(_sort_exec_exprs.prepare(
-                    state, _row_descriptor, _row_descriptor, expr_mem_tracker()));
+                    state, _row_descriptor, _row_descriptor, expr_mem_tracker())); // 对SortExecExprs对象执行prepare
         // AddExprCtxsToFree(_sort_exec_exprs);
     }
     return Status::OK();
 }
 
+/*打开ExchangeNode*/
 Status ExchangeNode::open(RuntimeState* state) {
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     RETURN_IF_ERROR(ExecNode::open(state));
-    if (_is_merging) {
-        RETURN_IF_ERROR(_sort_exec_exprs.open(state));
+    if (_is_merging) { // 需要做聚合
+        RETURN_IF_ERROR(_sort_exec_exprs.open(state)); // 打开SortExecExprs
         TupleRowComparator less_than(_sort_exec_exprs, _is_asc_order, _nulls_first);
         // create_merger() will populate its merging heap with batches from the _stream_recvr,
         // so it is not necessary to call fill_input_row_batch().
-        RETURN_IF_ERROR(_stream_recvr->create_merger(less_than));
-    } else {
-        RETURN_IF_ERROR(fill_input_row_batch(state));
+        RETURN_IF_ERROR(_stream_recvr->create_merger(less_than)); // 创建merger
+    } else {          // 不需要做聚合
+        RETURN_IF_ERROR(fill_input_row_batch(state)); // 通过DataStreamRecvr从sender queue中获取一个batch数据
     }
     return Status::OK();
 }
 
+/*收集query数据*/
 Status ExchangeNode::collect_query_statistics(QueryStatistics* statistics) {
-    RETURN_IF_ERROR(ExecNode::collect_query_statistics(statistics));
+    RETURN_IF_ERROR(ExecNode::collect_query_statistics(statistics)); // 收集query数据
     statistics->merge(_sub_plan_query_statistics_recvr.get());
     return Status::OK();
 }
 
+/*关闭ExchangeNode*/
 Status ExchangeNode::close(RuntimeState* state) {
     if (is_closed()) {
         return Status::OK();
     }
     if (_is_merging) {
-        _sort_exec_exprs.close(state);
+        _sort_exec_exprs.close(state); // 关闭SortExecExprs
     }
     if (_stream_recvr != NULL) {
-        _stream_recvr->close();
+        _stream_recvr->close();        // 关闭DataStreamRecvr
     }
     // _stream_recvr.reset();
-    return ExecNode::close(state);
+    return ExecNode::close(state);    // 执行父类ExecNode的close()函数
 }
 
+/*通过DataStreamRecvr从sender queue中获取一个batch数据*/
 Status ExchangeNode::fill_input_row_batch(RuntimeState* state) {
     DCHECK(!_is_merging);
     Status ret_status;
     {
         // SCOPED_TIMER(state->total_network_receive_timer());
-        ret_status = _stream_recvr->get_batch(&_input_batch);
+        ret_status = _stream_recvr->get_batch(&_input_batch); // 通过DataStreamRecvr对象从sender queue中获取一个batch数据
+        // _is_merging为false时，DataStreamRecvr对象中只有一个sender queue；_is_merging为true时，DataStreamRecvr对象中每个
+        // sender都对应一个sender queue。
     }
     VLOG_FILE << "exch: has batch=" << (_input_batch == NULL ? "false" : "true")
         << " #rows=" << (_input_batch != NULL ? _input_batch->num_rows() : 0)
@@ -128,11 +138,12 @@ Status ExchangeNode::fill_input_row_batch(RuntimeState* state) {
     return ret_status;
 }
 
+/*获取一个batch数据*/
 Status ExchangeNode::get_next(RuntimeState* state, RowBatch* output_batch, bool* eos) {
     RETURN_IF_ERROR(exec_debug_action(TExecNodePhase::GETNEXT));
     SCOPED_TIMER(_runtime_profile->total_time_counter());
 
-    if (reached_limit()) {
+    if (reached_limit()) { // 数据行数超限
         _stream_recvr->transfer_all_resources(output_batch);
         *eos = true;
         return Status::OK();
@@ -141,9 +152,10 @@ Status ExchangeNode::get_next(RuntimeState* state, RowBatch* output_batch, bool*
     }
 
     if (_is_merging) {
-        return get_next_merging(state, output_batch, eos);
+        return get_next_merging(state, output_batch, eos); // 如果需要聚合，获取一个batch数据
     }
 
+    // 不需要聚合
     ExprContext* const* ctxs = &_conjunct_ctxs[0];
     int num_ctxs = _conjunct_ctxs.size();
 
@@ -154,7 +166,7 @@ Status ExchangeNode::get_next(RuntimeState* state, RowBatch* output_batch, bool*
             // copy rows until we hit the limit/capacity or until we exhaust _input_batch
             while (!reached_limit() && !output_batch->at_capacity()
                     && _input_batch != NULL && _next_row_idx < _input_batch->capacity()) {
-                TupleRow* src = _input_batch->get_row(_next_row_idx);
+                TupleRow* src = _input_batch->get_row(_next_row_idx); // 获取一行数据
 
                 if (ExecNode::eval_conjuncts(ctxs, num_ctxs, src)) {
                     int j = output_batch->add_row();
@@ -206,18 +218,19 @@ Status ExchangeNode::get_next(RuntimeState* state, RowBatch* output_batch, bool*
     }
 }
 
+/*如果需要聚合，获取一个batch数据*/
 Status ExchangeNode::get_next_merging(RuntimeState* state, RowBatch* output_batch, bool* eos) {
     DCHECK_EQ(output_batch->num_rows(), 0);
     RETURN_IF_CANCELLED(state);
     RETURN_IF_ERROR(state->check_query_state("Exchange, while merging next."));
 
-    RETURN_IF_ERROR(_stream_recvr->get_next(output_batch, eos));
+    RETURN_IF_ERROR(_stream_recvr->get_next(output_batch, eos)); // 通过DataStreamRecvr调用底层的merger获取一个batch
     while ((_num_rows_skipped < _offset)) {
         _num_rows_skipped += output_batch->num_rows();
         // Throw away rows in the output batch until the offset is skipped.
         int rows_to_keep = _num_rows_skipped - _offset;
         if (rows_to_keep > 0) {
-            output_batch->copy_rows(0, output_batch->num_rows() - rows_to_keep, rows_to_keep);
+            output_batch->copy_rows(0, output_batch->num_rows() - rows_to_keep, rows_to_keep); // 深拷贝
             output_batch->set_num_rows(rows_to_keep);
         } else {
             output_batch->set_num_rows(0);
@@ -225,7 +238,7 @@ Status ExchangeNode::get_next_merging(RuntimeState* state, RowBatch* output_batc
         if (rows_to_keep > 0 || *eos || output_batch->at_capacity()) {
             break;
         }
-        RETURN_IF_ERROR(_stream_recvr->get_next(output_batch, eos));
+        RETURN_IF_ERROR(_stream_recvr->get_next(output_batch, eos)); // 通过DataStreamRecvr调用底层的merger获取一个batch
     }
 
     _num_rows_returned += output_batch->num_rows();

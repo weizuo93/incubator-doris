@@ -42,6 +42,7 @@ template<typename T>
 PInternalServiceImpl<T>::~PInternalServiceImpl() {
 }
 
+/*接收来自其它BE的data stream sender发来的数据*/
 template<typename T>
 void PInternalServiceImpl<T>::transmit_data(google::protobuf::RpcController* cntl_base,
                                          const PTransmitDataParams* request,
@@ -49,7 +50,7 @@ void PInternalServiceImpl<T>::transmit_data(google::protobuf::RpcController* cnt
                                          google::protobuf::Closure* done) {
     VLOG_ROW << "transmit data: fragment_instance_id=" << print_id(request->finst_id())
             << " node=" << request->node_id();
-    _exec_env->stream_mgr()->transmit_data(request, &done);
+    _exec_env->stream_mgr()->transmit_data(request, &done); // 通过DataStreamMgr将数据batch添加到DataStreamRecvr中
     if (done != nullptr) {
         done->Run();
     }

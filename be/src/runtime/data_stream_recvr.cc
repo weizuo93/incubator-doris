@@ -52,6 +52,8 @@ namespace doris {
 // Implements a blocking queue of row batches from one or more senders. One queue
 // is maintained per sender if _is_merging is true for the enclosing receiver, otherwise
 // rows from all senders are placed in the same queue.
+// _is_merging为false时，DataStreamRecvr对象中只有一个sender queue，所有sender发送来的数据都保存在同一个sender queue中；
+// _is_merging为true时，DataStreamRecvr对象中每个sender都对应一个sender queue。
 class DataStreamRecvr::SenderQueue {
 public:
     SenderQueue(DataStreamRecvr* parent_recvr, int num_senders, RuntimeProfile* profile);
@@ -131,6 +133,7 @@ private:
     std::deque<std::pair<google::protobuf::Closure*, MonotonicStopWatch>> _pending_closures;
 };
 
+/*SenderQueue的构造函数*/
 DataStreamRecvr::SenderQueue::SenderQueue(
         DataStreamRecvr* parent_recvr, int num_senders, RuntimeProfile* profile) :
     _recvr(parent_recvr),
@@ -139,6 +142,7 @@ DataStreamRecvr::SenderQueue::SenderQueue(
     _received_first_batch(false) {
 }
 
+/*从SenderQueue中获取一个batch的数据*/
 Status DataStreamRecvr::SenderQueue::get_batch(RowBatch** next_batch) {
     unique_lock<mutex> l(_lock);
     // wait until something shows up or we know we're done
@@ -187,6 +191,7 @@ Status DataStreamRecvr::SenderQueue::get_batch(RowBatch** next_batch) {
     return Status::OK();
 }
 
+/*向SenderQueue中添加一个batch的数据*/
 void DataStreamRecvr::SenderQueue::add_batch(
         const PRowBatch& pb_batch,
         int be_number, int64_t packet_seq,
@@ -260,14 +265,15 @@ void DataStreamRecvr::SenderQueue::add_batch(
     _data_arrival_cv.notify_one();
 }
 
+/*向SenderQueue的成员变量中_sender_eos_set添加参数传入的be number，当前SenderQueue对应的sender数目减1*/
 void DataStreamRecvr::SenderQueue::decrement_senders(int be_number) {
     lock_guard<mutex> l(_lock);
     if (_sender_eos_set.end() != _sender_eos_set.find(be_number)) {
         return;
     }
-    _sender_eos_set.insert(be_number);
+    _sender_eos_set.insert(be_number); // 向SenderQueue的成员变量中_sender_eos_set(表示已经结束的sender)添加参数传入的be number
     DCHECK_GT(_num_remaining_senders, 0);
-    _num_remaining_senders--;
+    _num_remaining_senders--;          // 当前SenderQueue对应的sender数目减1
     VLOG_FILE << "decremented senders: fragment_instance_id="
         << _recvr->fragment_instance_id()
         << " node_id=" << _recvr->dest_node_id()
@@ -277,6 +283,7 @@ void DataStreamRecvr::SenderQueue::decrement_senders(int be_number) {
     }
 }
 
+/*取消SenderQueue*/
 void DataStreamRecvr::SenderQueue::cancel() {
     {
         lock_guard<mutex> l(_lock);
@@ -304,6 +311,7 @@ void DataStreamRecvr::SenderQueue::cancel() {
     }
 }
 
+/*关闭SenderQueue*/
 void DataStreamRecvr::SenderQueue::close() {
     {
         // If _is_cancelled is not set to true, there may be concurrent send
@@ -327,6 +335,7 @@ void DataStreamRecvr::SenderQueue::close() {
     _current_batch.reset();
 }
 
+/*创建SortedRunMerger对象*/
 Status DataStreamRecvr::create_merger(const TupleRowComparator& less_than) {
     DCHECK(_is_merging);
     vector<SortedRunMerger::RunBatchSupplier> input_batch_suppliers;
@@ -339,7 +348,7 @@ Status DataStreamRecvr::create_merger(const TupleRowComparator& less_than) {
         input_batch_suppliers.push_back(
                 bind(mem_fn(&SenderQueue::get_batch), _sender_queues[i], _1));
     }
-    RETURN_IF_ERROR(_merger->prepare(input_batch_suppliers));
+    RETURN_IF_ERROR(_merger->prepare(input_batch_suppliers)); // 对merger执行prepare()函数
     return Status::OK();
 }
 
@@ -351,6 +360,7 @@ void DataStreamRecvr::transfer_all_resources(RowBatch* transfer_batch) {
     }
 }
 
+/*DataStreamRecvr的构造函数*/
 DataStreamRecvr::DataStreamRecvr(
         DataStreamMgr* stream_mgr, MemTracker* parent_tracker,
         const RowDescriptor& row_desc, const TUniqueId& fragment_instance_id,
@@ -372,6 +382,8 @@ DataStreamRecvr::DataStreamRecvr(
     // _mem_tracker.reset(new MemTracker(_profile.get(), -1, "DataStreamRecvr", parent_tracker));
 
     // Create one queue per sender if is_merging is true.
+    // _is_merging为false时，DataStreamRecvr对象中只有一个sender queue，所有sender发送来的数据都保存在同一个sender queue中；
+    // _is_merging为true时，DataStreamRecvr对象中每个sender都对应一个sender queue。
     int num_queues = is_merging ? num_senders : 1;
     _sender_queues.reserve(num_queues);
     int num_sender_per_queue = is_merging ? 1 : num_senders;
@@ -393,33 +405,38 @@ DataStreamRecvr::DataStreamRecvr(
     _first_batch_wait_total_timer = ADD_TIMER(_profile, "FirstBatchArrivalWaitTime");
 }
 
+/*_is_merging为true,通过merger获取一个batch的数据*/
 Status DataStreamRecvr::get_next(RowBatch* output_batch, bool* eos) {
     DCHECK(_merger.get() != NULL);
-    return _merger->get_next(output_batch, eos);
+    return _merger->get_next(output_batch, eos); // 通过merger获取一个batch的数据
 }
 
+/*向sender queue中添加1个batch的数据*/
 void DataStreamRecvr::add_batch(
         const PRowBatch& batch, int sender_id,
         int be_number, int64_t packet_seq,
         ::google::protobuf::Closure** done) {
     int use_sender_id = _is_merging ? sender_id : 0;
     // Add all batches to the same queue if _is_merging is false.
-    _sender_queues[use_sender_id]->add_batch(batch, be_number, packet_seq, done);
+    _sender_queues[use_sender_id]->add_batch(batch, be_number, packet_seq, done); // 向sender queue中添加1个batch的数据
 }
 
+/*从sender queue中删除一个sender*/
 void DataStreamRecvr::remove_sender(int sender_id, int be_number) {
     int use_sender_id = _is_merging ? sender_id : 0;
     _sender_queues[use_sender_id]->decrement_senders(be_number);
 }
 
+/*取消DataStreamRecvr*/
 void DataStreamRecvr::cancel_stream() {
-    for (int i = 0; i < _sender_queues.size(); ++i) {
+    for (int i = 0; i < _sender_queues.size(); ++i) { // 依次取消每一个sender queue
         _sender_queues[i]->cancel();
     }
 }
 
+/*关闭DataStreamRecvr*/
 void DataStreamRecvr::close() {
-    for (int i = 0; i < _sender_queues.size(); ++i) {
+    for (int i = 0; i < _sender_queues.size(); ++i) { // 依次关闭每一个sender queue
         _sender_queues[i]->close();
     }
     // Remove this receiver from the DataStreamMgr that created it.
@@ -436,6 +453,7 @@ DataStreamRecvr::~DataStreamRecvr() {
     DCHECK(_mgr == NULL) << "Must call close()";
 }
 
+/*_is_merging为false,从sender queue中获取一个batch的数据*/
 Status DataStreamRecvr::get_batch(RowBatch** next_batch) {
     DCHECK(!_is_merging);
     DCHECK_EQ(_sender_queues.size(), 1);

@@ -142,7 +142,7 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     LOG(INFO) << "Using query memory limit: "
         << PrettyPrinter::print(bytes_limit, TUnit::BYTES);
 
-    RETURN_IF_ERROR(_runtime_state->create_block_mgr());
+    RETURN_IF_ERROR(_runtime_state->create_block_mgr()); // 创建block mgr
 
     // set up desc tbl
     DescriptorTbl* desc_tbl = NULL;
