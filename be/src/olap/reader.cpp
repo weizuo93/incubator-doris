@@ -272,6 +272,7 @@ inline OLAPStatus CollectIterator::_merge_next(const RowCursor** row, bool* dele
 }
 
 /*_merge为false，获取要读取的下一行数据，通过参数row返回，同时返回该行数据是否已被删除的标志。（所有rowset对应的ChildCtx元素保存在vector结构中）*/
+// 按rowset顺序返回每一个rowset的全部数据，返回数据局部有序
 inline OLAPStatus CollectIterator::_normal_next(const RowCursor** row, bool* delete_flag) {
     auto res = _cur_child->next(row, delete_flag); // 通过rowset reader获取一行数据，通过参数row传回，并将该行数据是否已经删除的标志通过参数delete_flag传回
     if (LIKELY(res == OLAP_SUCCESS)) {
