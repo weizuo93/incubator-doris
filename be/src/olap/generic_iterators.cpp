@@ -201,7 +201,7 @@ Status MergeIteratorContext::_load_next_block() {
 class MergeIterator : public RowwiseIterator {
 public:
     // MergeIterator takes the ownership of input iterators
-    MergeIterator(std::vector<RowwiseIterator*> iters)
+    MergeIterator(std::vector<RowwiseIterator*> iters) // MergeIterator对应一个rowset
         : _origin_iters(std::move(iters)) {
     }
 
@@ -220,7 +220,7 @@ public:
         return *_schema;
     }
 private:
-    std::vector<RowwiseIterator*> _origin_iters;
+    std::vector<RowwiseIterator*> _origin_iters; // 对应rowset中的多个segment文件
     std::vector<MergeIteratorContext*> _merge_ctxs;
 
     std::unique_ptr<Schema> _schema;
@@ -229,37 +229,39 @@ private:
         bool operator()(const MergeIteratorContext* lhs, const MergeIteratorContext* rhs) const {
             auto lhs_row = lhs->current_row();
             auto rhs_row = rhs->current_row();
-            int cmp_res = compare_row(lhs_row, rhs_row);
+            int cmp_res = compare_row(lhs_row, rhs_row); // 比较两行数据的key值大小
             if (cmp_res !=  0) {
                 return cmp_res > 0;
             }
             // if row cursors equal, compare segment id.
             // here we sort segment id in reverse order, because of the row order in AGG_KEYS
             // dose no matter, but in UNIQUE_KEYS table we only read the latest is one, so we
-            // return the row in reverse order of segment id 
+            // return the row in reverse order of segment id
+            // 如果两行数据的key相等，则比较两行数据所在的segment id，在UNIQUE_KEYS数据模型中，对于key值相等的两行，应该先读最新的数据行
             return lhs->data_id() < rhs->data_id();
         }
     };
     using MergeHeap = std::priority_queue<MergeIteratorContext*,
             std::vector<MergeIteratorContext*>, MergeContextComparator>;
-    std::unique_ptr<MergeHeap> _merge_heap;
+    std::unique_ptr<MergeHeap> _merge_heap; // 定义堆结构
 };
 
+/*初始化MergeIterator*/
 Status MergeIterator::init(const StorageReadOptions& opts) {
     if (_origin_iters.empty()) {
         return Status::OK();
     }
-    _schema.reset(new Schema(_origin_iters[0]->schema()));
-    _merge_heap.reset(new MergeHeap);
+    _schema.reset(new Schema(_origin_iters[0]->schema())); // 初始化成员变量_schema
+    _merge_heap.reset(new MergeHeap); // 初始化成员变量_merge_heap
 
-    for (auto iter : _origin_iters) {
-        std::unique_ptr<MergeIteratorContext> ctx(new MergeIteratorContext(iter));
-        RETURN_IF_ERROR(ctx->init(opts));
+    for (auto iter : _origin_iters) { // 依次遍历_origin_iters中的每一个iterator
+        std::unique_ptr<MergeIteratorContext> ctx(new MergeIteratorContext(iter)); // 针对当前iterator创建MergeIteratorContext对象
+        RETURN_IF_ERROR(ctx->init(opts)); // 初始化新创建的MergeIteratorContext对象
         if (!ctx->valid()) {
             continue;
         }
-        _merge_heap->push(ctx.get());
-        _merge_ctxs.push_back(ctx.release());
+        _merge_heap->push(ctx.get()); // 将新创建的MergeIteratorContext对象添加到堆结构中
+        _merge_ctxs.push_back(ctx.release()); // 将新创建的MergeIteratorContext对象添加到成员变量_merge_ctxs中
     }
     return Status::OK();
 }
@@ -298,7 +300,7 @@ public:
     // Iterators' ownership it transfered to this class.
     // This class will delete all iterators when destructs
     // Client should not use iterators any more.
-    UnionIterator(std::vector<RowwiseIterator*> iters)
+    UnionIterator(std::vector<RowwiseIterator*> iters) // UnionIterator对应一个rowset
         : _origin_iters(std::move(iters)) {
     }
 
@@ -315,45 +317,49 @@ public:
     }
 
 private:
-    std::vector<RowwiseIterator*> _origin_iters;
-    size_t _iter_idx = 0;
+    std::vector<RowwiseIterator*> _origin_iters;  // 对应rowset中的多个segment文件
+    size_t _iter_idx = 0; // 记录成员变量_origin_iters中当前的iterator
 };
 
+/*初始化UnionIterator*/
 Status UnionIterator::init(const StorageReadOptions& opts) {
-    for (auto iter : _origin_iters) {
-        RETURN_IF_ERROR(iter->init(opts));
+    for (auto iter : _origin_iters) { // 依次遍历成员变量_origin_iters中的每一个iterator
+        RETURN_IF_ERROR(iter->init(opts)); // 初始化iterator
     }
     return Status::OK();
 }
 
+/*从UnionIterator中获取下一个block，通过参数block传回*/
 Status UnionIterator::next_batch(RowBlockV2* block) {
-    if (_iter_idx >= _origin_iters.size()) {
+    if (_iter_idx >= _origin_iters.size()) { // 判断成员变量_origin_iters中，是否所有的iterator中的block都被读完
         return Status::EndOfFile("End of UnionIterator");
     }
     do {
-        auto iter = _origin_iters[_iter_idx];
-        auto st = iter->next_batch(block);
+        auto iter = _origin_iters[_iter_idx]; // 成员变量_iter_idx记录当前正在访问的iterator
+        auto st = iter->next_batch(block);    // 从当前iterator中获取一个block
         if (st.is_end_of_file()) {
-            _iter_idx++;
+            _iter_idx++; // 如果当前iterator已经访问结束，则将成员变量_iter_idx指向_origin_iters中的下一个iterator
         } else {
             return st;
         }
-    } while (_iter_idx < _origin_iters.size());
+    } while (_iter_idx < _origin_iters.size()); // 在UnionIterator中，会逐个从_origin_iters中访问每一个iterator，获取block
     return Status::EndOfFile("End of UnionIterator");
 }
 
+/*创建一个MergeIterator*/
 RowwiseIterator* new_merge_iterator(std::vector<RowwiseIterator*> inputs) {
     if (inputs.size() == 1) {
         return inputs[0];
     }
-    return new MergeIterator(std::move(inputs));
+    return new MergeIterator(std::move(inputs)); // 根据参数传入的input iterators创建MergeIterator对象
 }
 
+/*创建一个UnionIterator*/
 RowwiseIterator* new_union_iterator(std::vector<RowwiseIterator*> inputs) {
     if (inputs.size() == 1) {
         return inputs[0];
     }
-    return new UnionIterator(std::move(inputs));
+    return new UnionIterator(std::move(inputs)); // 根据参数传入的input iterators创建UnionIterator对象
 }
 
 RowwiseIterator* new_auto_increment_iterator(const Schema& schema, size_t num_rows) {
