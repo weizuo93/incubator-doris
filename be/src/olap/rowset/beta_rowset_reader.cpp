@@ -47,6 +47,7 @@ OLAPStatus BetaRowsetReader::init(RowsetReaderContext* read_context) {
     Schema schema(_context->tablet_schema->columns(), *(_context->return_columns));
 
     // convert RowsetReaderContext to StorageReadOptions
+    // 创建并初始化read options
     StorageReadOptions read_options;
     read_options.stats = _stats;
     read_options.conditions = read_context->conditions;
@@ -115,7 +116,7 @@ OLAPStatus BetaRowsetReader::init(RowsetReaderContext* read_context) {
     return OLAP_SUCCESS;
 }
 
-/*获取next block，通过参数block传回*/
+/*从当前rowset中获取next block，通过参数block传回*/
 OLAPStatus BetaRowsetReader::next_block(RowBlock** block) {
     SCOPED_RAW_TIMER(&_stats->block_fetch_ns);
     // read next input block

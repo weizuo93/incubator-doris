@@ -182,7 +182,7 @@ Status MergeIteratorContext::advance() {
     return Status::OK();
 }
 
-/*加载下一个block*/
+/*从当前segment中加载下一个block*/
 Status MergeIteratorContext::_load_next_block() {
     Status st;
     do {
@@ -270,7 +270,7 @@ Status MergeIterator::init(const StorageReadOptions& opts) {
     return Status::OK();
 }
 
-/*从MergeIterator中获取下一个block，通过参数block传回*/
+/*从MergeIterator(对应当前的rowset)中获取下一个block，通过参数block传回*/
 Status MergeIterator::next_batch(RowBlockV2* block) {
     size_t row_idx = 0;
     for (; row_idx < block->capacity() && !_merge_heap->empty(); ++row_idx) {
@@ -334,7 +334,7 @@ Status UnionIterator::init(const StorageReadOptions& opts) {
     return Status::OK();
 }
 
-/*从UnionIterator中获取下一个block，通过参数block传回*/
+/*从UnionIterator(对应当前的rowset)中获取下一个block，通过参数block传回*/
 Status UnionIterator::next_batch(RowBlockV2* block) {
     if (_iter_idx >= _origin_iters.size()) { // 判断成员变量_origin_iters中，是否所有segment的SegmentIterator中的block都被读完
         return Status::EndOfFile("End of UnionIterator");

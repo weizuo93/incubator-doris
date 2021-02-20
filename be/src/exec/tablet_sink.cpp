@@ -216,7 +216,7 @@ Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
         row_no = _cur_batch->add_row(); // 将需要添加的数据行添加到新的数据batch中
     }
     DCHECK_NE(row_no, RowBatch::INVALID_ROW_INDEX);
-    auto tuple = input_tuple->deep_copy(*_tuple_desc, _cur_batch->tuple_data_pool()); // 堆要添加的行执行深拷贝
+    auto tuple = input_tuple->deep_copy(*_tuple_desc, _cur_batch->tuple_data_pool()); // 对要添加的行执行深拷贝
     _cur_batch->get_row(row_no)->set_tuple(0, tuple); // 设置行号为row_no的行数据为深拷贝得到的tuple
     _cur_batch->commit_last_row(); // 提交一行
     _cur_add_batch_request.add_tablet_ids(tablet_id);

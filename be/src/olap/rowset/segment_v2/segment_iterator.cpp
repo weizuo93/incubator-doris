@@ -123,21 +123,23 @@ Status SegmentIterator::init(const StorageReadOptions& opts) {
     return Status::OK();
 }
 
+/*初始化SegmentIterator*/
 Status SegmentIterator::_init() {
     DorisMetrics::instance()->segment_read_total.increment(1);
     // get file handle from file descriptor of segment
     fs::BlockManager* block_mgr = fs::fs_util::block_manager();
     RETURN_IF_ERROR(block_mgr->open_block(_segment->_fname, &_rblock));
-    _row_bitmap.addRange(0, _segment->num_rows());
-    RETURN_IF_ERROR(_init_return_column_iterators());
-    RETURN_IF_ERROR(_init_bitmap_index_iterators());
-    RETURN_IF_ERROR(_get_row_ranges_by_keys());
-    RETURN_IF_ERROR(_get_row_ranges_by_column_conditions());
-    _init_lazy_materialization();
+    _row_bitmap.addRange(0, _segment->num_rows()); // 初始化成员变量_row_bitmap的范围为整个segment文件的所有行
+    RETURN_IF_ERROR(_init_return_column_iterators()); // 初始化返回列的iterator
+    RETURN_IF_ERROR(_init_bitmap_index_iterators()); // 初始化每一列的bitmap index iterator
+    RETURN_IF_ERROR(_get_row_ranges_by_keys()); // 根据各个key的范围获取row id的范围
+    RETURN_IF_ERROR(_get_row_ranges_by_column_conditions()); // 根据各个column condition的范围获取row id的范围
+    _init_lazy_materialization(); // 初始化lazy materialization
     _range_iter.reset(new BitmapRangeIterator(_row_bitmap));
     return Status::OK();
 }
 
+/*根据各个key的范围获取row id的范围*/
 Status SegmentIterator::_get_row_ranges_by_keys() {
     DorisMetrics::instance()->segment_row_total.increment(num_rows());
 
@@ -147,7 +149,7 @@ Status SegmentIterator::_get_row_ranges_by_keys() {
     }
 
     RowRanges result_ranges;
-    for (auto& key_range : _opts.key_ranges) {
+    for (auto& key_range : _opts.key_ranges) { // 依次遍历每一个key range
         rowid_t lower_rowid = 0;
         rowid_t upper_rowid = num_rows();
         RETURN_IF_ERROR(_prepare_seek(key_range));
@@ -162,12 +164,12 @@ Status SegmentIterator::_get_row_ranges_by_keys() {
             RETURN_IF_ERROR(
                 _lookup_ordinal(*key_range.lower_key, key_range.include_lower, upper_rowid, &lower_rowid));
         }
-        auto row_range = RowRanges::create_single(lower_rowid, upper_rowid);
-        RowRanges::ranges_union(result_ranges, row_range, &result_ranges);
+        auto row_range = RowRanges::create_single(lower_rowid, upper_rowid); // 获取当前key的range对应的row id的范围
+        RowRanges::ranges_union(result_ranges, row_range, &result_ranges); // 使用当前key的range更新最终row id的范围
     }
     // pre-condition: _row_ranges == [0, num_rows)
     size_t pre_size = _row_bitmap.cardinality();
-    _row_bitmap = RowRanges::ranges_to_roaring(result_ranges);
+    _row_bitmap = RowRanges::ranges_to_roaring(result_ranges); // 使用row id的范围更新成员变量_row_bitmap
     _opts.stats->rows_key_range_filtered += (pre_size - _row_bitmap.cardinality());
     DorisMetrics::instance()->segment_rows_by_short_key.increment(_row_bitmap.cardinality());
 
@@ -209,6 +211,7 @@ Status SegmentIterator::_prepare_seek(const StorageReadOptions::KeyRange& key_ra
     return Status::OK();
 }
 
+/*根据各个column condition的范围获取row id的范围*/
 Status SegmentIterator::_get_row_ranges_by_column_conditions() {
     if (_row_bitmap.isEmpty()) {
         return Status::OK();
@@ -217,9 +220,9 @@ Status SegmentIterator::_get_row_ranges_by_column_conditions() {
 
     if (!_row_bitmap.isEmpty() && (_opts.conditions != nullptr || _opts.delete_conditions.size() > 0)) {
         RowRanges condition_row_ranges = RowRanges::create_single(_segment->num_rows());
-        RETURN_IF_ERROR(_get_row_ranges_from_conditions(&condition_row_ranges));
+        RETURN_IF_ERROR(_get_row_ranges_from_conditions(&condition_row_ranges)); // 根据column condition的范围获取row id的范围
         size_t pre_size = _row_bitmap.cardinality();
-        _row_bitmap &= RowRanges::ranges_to_roaring(condition_row_ranges);
+        _row_bitmap &= RowRanges::ranges_to_roaring(condition_row_ranges);  // 根据row id的范围更新成员变量_row_bitmap
         _opts.stats->rows_del_filtered += (pre_size - _row_bitmap.cardinality());
     }
 
@@ -228,15 +231,17 @@ Status SegmentIterator::_get_row_ranges_by_column_conditions() {
     return Status::OK();
 }
 
+/*根据column condition的范围获取row id的范围*/
 Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row_ranges) {
     std::set<int32_t> cids;
     if (_opts.conditions != nullptr) {
-        for (auto& column_condition : _opts.conditions->columns()) {
-            cids.insert(column_condition.first);
+        for (auto& column_condition : _opts.conditions->columns()) { // 依次遍历每一个condition列
+            cids.insert(column_condition.first); //将column id添加到cids
         }
     }
     // first filter data by bloom filter index
     // bloom filter index only use CondColumn
+    // 首先，根据布隆过滤器过滤数据
     RowRanges bf_row_ranges = RowRanges::create_single(num_rows());
     for (auto& cid : cids) {
         // get row ranges by bf index of this column,
@@ -254,6 +259,7 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
 
     RowRanges zone_map_row_ranges = RowRanges::create_single(num_rows());
     // second filter data by zone map
+    // 然后，根据zone map索引过滤数据
     for (auto& cid : cids) {
         // get row ranges by zone map of this column,
         RowRanges column_row_ranges = RowRanges::create_single(num_rows());
@@ -271,6 +277,7 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
     }
 
     // final filter data with delete conditions
+    // 最后，根据delete condition过滤数据
     for (auto& delete_condition : _opts.delete_conditions) {
         RowRanges delete_condition_row_ranges = RowRanges::create_single(0);
         for (auto& delete_column_condition : delete_condition->columns()) {
@@ -320,30 +327,32 @@ Status SegmentIterator::_apply_bitmap_index() {
     return Status::OK();
 }
 
+/*初始化返回列的iterator*/
 Status SegmentIterator::_init_return_column_iterators() {
     if (_cur_rowid >= num_rows()) {
         return Status::OK();
     }
-    for (auto cid : _schema.column_ids()) {
+    for (auto cid : _schema.column_ids()) { // 依次遍历schema中的每一列
         if (_column_iterators[cid] == nullptr) {
-            RETURN_IF_ERROR(_segment->new_column_iterator(cid, &_column_iterators[cid]));
+            RETURN_IF_ERROR(_segment->new_column_iterator(cid, &_column_iterators[cid])); // 针对当前列创建ColumnIterator
             ColumnIteratorOptions iter_opts;
             iter_opts.stats = _opts.stats;
             iter_opts.use_page_cache = _opts.use_page_cache;
             iter_opts.rblock = _rblock.get();
-            RETURN_IF_ERROR(_column_iterators[cid]->init(iter_opts));
+            RETURN_IF_ERROR(_column_iterators[cid]->init(iter_opts)); // 初始化新创建的ColumnIterator
         }
     }
     return Status::OK();
 }
 
+/*初始化每一列的bitmap index iterator*/
 Status SegmentIterator::_init_bitmap_index_iterators() {
     if (_cur_rowid >= num_rows()) {
         return Status::OK();
     }
-    for (auto cid: _schema.column_ids()) {
+    for (auto cid: _schema.column_ids()) { // 依次遍历schema中的每一列
         if (_bitmap_index_iterators[cid] == nullptr) {
-            RETURN_IF_ERROR(_segment->new_bitmap_index_iterator(cid, &_bitmap_index_iterators[cid]));
+            RETURN_IF_ERROR(_segment->new_bitmap_index_iterator(cid, &_bitmap_index_iterators[cid])); // 针对当前列创建BitmapIndexIterator
         }
     }
     return Status::OK();
@@ -435,19 +444,20 @@ Status SegmentIterator::_seek_and_peek(rowid_t rowid) {
     return Status::OK();
 }
 
+/*初始化lazy materialization*/
 void SegmentIterator::_init_lazy_materialization() {
     if (!_col_predicates.empty()) {
-        std::set<ColumnId> predicate_columns;
-        for (auto predicate : _col_predicates) {
-            predicate_columns.insert(predicate->column_id());
+        std::set<ColumnId> predicate_columns; // 保存谓词列的id
+        for (auto predicate : _col_predicates) { // 遍历每一个谓词列
+            predicate_columns.insert(predicate->column_id()); // 保存谓词列的id到变量predicate_columns
         }
         // when all return columns have predicates, disable lazy materialization to avoid its overhead
         if (_schema.column_ids().size() > predicate_columns.size()) {
             _lazy_materialization_read = true;
             _predicate_columns.assign(predicate_columns.cbegin(), predicate_columns.cend());
-            for (auto cid : _schema.column_ids()) {
-                if (predicate_columns.find(cid) == predicate_columns.end()) {
-                    _non_predicate_columns.push_back(cid);
+            for (auto cid : _schema.column_ids()) { // 遍历schema中的每一列
+                if (predicate_columns.find(cid) == predicate_columns.end()) { // 判断当前列是否为谓词列
+                    _non_predicate_columns.push_back(cid); // 将非谓词列添加到成员变量_non_predicate_columns中
                 }
             }
         }
@@ -478,10 +488,11 @@ Status SegmentIterator::_read_columns(const std::vector<ColumnId>& column_ids,
     return Status::OK();
 }
 
+/*从segment中获取一个block*/
 Status SegmentIterator::next_batch(RowBlockV2* block) {
     SCOPED_RAW_TIMER(&_opts.stats->block_load_ns);
-    if (UNLIKELY(!_inited)) {
-        RETURN_IF_ERROR(_init());
+    if (UNLIKELY(!_inited)) { // 判断SegmentIterator是否已经被初始化
+        RETURN_IF_ERROR(_init()); // 会在第一次执行next_batch()函数时初始化SegmentIterator
         if (_lazy_materialization_read) {
             _block_rowids.reserve(block->capacity());
         }
@@ -489,8 +500,8 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
     }
 
     uint32_t nrows_read = 0;
-    uint32_t nrows_read_limit = block->capacity();
-    _block_rowids.resize(nrows_read_limit);
+    uint32_t nrows_read_limit = block->capacity(); // 设置读数据行数上限为block的容量
+    _block_rowids.resize(nrows_read_limit);        // _block_rowids中保存读到block中的数据行的id
     const auto& read_columns = _lazy_materialization_read ? _predicate_columns : block->schema()->column_ids();
 
     // phase 1: read rows selected by various index (indicated by _row_bitmap) into block
