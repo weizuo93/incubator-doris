@@ -114,7 +114,7 @@ Status AutoIncrementIterator::next_batch(RowBlockV2* block) {
 class MergeIteratorContext {
 public:
     // This class don't take iter's ownership, client should delete it
-    MergeIteratorContext(RowwiseIterator* iter)
+    MergeIteratorContext(RowwiseIterator* iter) // MergeIteratorContext对应rowset中的一个segment文件
         : _iter(iter), _block(iter->schema(), 1024) {
     }
 
@@ -125,6 +125,7 @@ public:
     // And this function won't make internal index advance.
     // Before call this function, Client must assure that
     // valid() return true
+    // 获取block中的一行数据
     RowBlockRow current_row() const {
         uint16_t* selection_vector = _block.selection_vector();
         return RowBlockRow(&_block, selection_vector[_index_in_block]);
@@ -154,9 +155,10 @@ private:
     RowBlockV2 _block;
 
     bool _valid = false;
-    size_t _index_in_block = -1;
+    size_t _index_in_block = -1; // 保存当前block中的行数据索引
 };
 
+/*初始化MergeIteratorContext*/
 Status MergeIteratorContext::init(const StorageReadOptions& opts) {
     RETURN_IF_ERROR(_iter->init(opts));
     RETURN_IF_ERROR(_load_next_block());
@@ -166,24 +168,26 @@ Status MergeIteratorContext::init(const StorageReadOptions& opts) {
     return Status::OK();
 }
 
+/*block中行数据索引后移一位，如果当前block没有数据，则加载下一个block，行索引指向新block的第一行*/
 Status MergeIteratorContext::advance() {
     // NOTE: we increase _index_in_block directly to valid one check
     do {
-        _index_in_block++;
-        if (_index_in_block < _block.selected_size()) {
+        _index_in_block++; // block中的行索引后移一位
+        if (_index_in_block < _block.selected_size()) { // 判断当前block中是否还有数据
             return Status::OK();
         }
         // current batch has no data, load next batch
-        RETURN_IF_ERROR(_load_next_block());
+        RETURN_IF_ERROR(_load_next_block()); // 加载下一个block
     } while (_valid);
     return Status::OK();
 }
 
+/*加载下一个block*/
 Status MergeIteratorContext::_load_next_block() {
     Status st;
     do {
         _block.clear();
-        st = _iter->next_batch(&_block);
+        st = _iter->next_batch(&_block); // 通过SegmentIterator(RowwiseIterator的子类对象)加载当前segment的下一个block
         if (!st.ok()) {
             _valid = false;
             if (st.is_end_of_file()) {
@@ -193,7 +197,7 @@ Status MergeIteratorContext::_load_next_block() {
             }
         }
     } while (_block.num_rows() == 0);
-    _index_in_block = -1;
+    _index_in_block = -1; // 对block的行索引进行复位
     _valid = true;
     return Status::OK();
 }
@@ -220,7 +224,7 @@ public:
         return *_schema;
     }
 private:
-    std::vector<RowwiseIterator*> _origin_iters; // 对应rowset中的多个segment文件
+    std::vector<RowwiseIterator*> _origin_iters; // _origin_iters对应rowset中的多个segment文件
     std::vector<MergeIteratorContext*> _merge_ctxs;
 
     std::unique_ptr<Schema> _schema;
@@ -266,26 +270,27 @@ Status MergeIterator::init(const StorageReadOptions& opts) {
     return Status::OK();
 }
 
+/*从MergeIterator中获取下一个block，通过参数block传回*/
 Status MergeIterator::next_batch(RowBlockV2* block) {
     size_t row_idx = 0;
     for (; row_idx < block->capacity() && !_merge_heap->empty(); ++row_idx) {
-        auto ctx = _merge_heap->top();
-        _merge_heap->pop();
+        auto ctx = _merge_heap->top(); // 获取堆顶
+        _merge_heap->pop(); // 将堆顶元素从堆中弹出
 
-        RowBlockRow dst_row = block->row(row_idx);
+        RowBlockRow dst_row = block->row(row_idx); // 获取block中需要添加行数据的位置
         // copy current row to block
-        copy_row(&dst_row, ctx->current_row(), block->pool());
+        copy_row(&dst_row, ctx->current_row(), block->pool()); // 将刚刚从堆中弹出的堆顶元素的一行数据复制到block中
 
         // TODO(hkp): refactor conditions and filter rows here with delete conditions
         if (ctx->is_partial_delete()) {
-            block->set_delete_state(DEL_PARTIAL_SATISFIED);
+            block->set_delete_state(DEL_PARTIAL_SATISFIED); // 设置block中有部分数据涉及delete操作而被删除
         }
         RETURN_IF_ERROR(ctx->advance());
         if (ctx->valid()) {
-            _merge_heap->push(ctx);
+            _merge_heap->push(ctx); // 将刚刚从堆中弹出的元素重新添加到堆中
         }
     }
-    block->set_num_rows(row_idx);
+    block->set_num_rows(row_idx); // 设置block的数据行数
     block->set_selected_size(row_idx);
     if (row_idx > 0) {
         return Status::OK();
@@ -317,7 +322,7 @@ public:
     }
 
 private:
-    std::vector<RowwiseIterator*> _origin_iters;  // 对应rowset中的多个segment文件
+    std::vector<RowwiseIterator*> _origin_iters;  // _origin_iters对应rowset中的多个segment文件
     size_t _iter_idx = 0; // 记录成员变量_origin_iters中当前的iterator
 };
 
@@ -331,18 +336,18 @@ Status UnionIterator::init(const StorageReadOptions& opts) {
 
 /*从UnionIterator中获取下一个block，通过参数block传回*/
 Status UnionIterator::next_batch(RowBlockV2* block) {
-    if (_iter_idx >= _origin_iters.size()) { // 判断成员变量_origin_iters中，是否所有的iterator中的block都被读完
+    if (_iter_idx >= _origin_iters.size()) { // 判断成员变量_origin_iters中，是否所有segment的SegmentIterator中的block都被读完
         return Status::EndOfFile("End of UnionIterator");
     }
     do {
-        auto iter = _origin_iters[_iter_idx]; // 成员变量_iter_idx记录当前正在访问的iterator
-        auto st = iter->next_batch(block);    // 从当前iterator中获取一个block
+        auto iter = _origin_iters[_iter_idx]; // 成员变量_iter_idx记录当前正在访问的SegmentIterator
+        auto st = iter->next_batch(block);    // 从当前SegmentIterator中获取一个block
         if (st.is_end_of_file()) {
-            _iter_idx++; // 如果当前iterator已经访问结束，则将成员变量_iter_idx指向_origin_iters中的下一个iterator
+            _iter_idx++; // 如果当前SegmentIterator已经访问结束，则将成员变量_iter_idx指向_origin_iters中的下一个SegmentIterator
         } else {
             return st;
         }
-    } while (_iter_idx < _origin_iters.size()); // 在UnionIterator中，会逐个从_origin_iters中访问每一个iterator，获取block
+    } while (_iter_idx < _origin_iters.size()); // 在UnionIterator中，会逐个从_origin_iters中访问每一个SegmentIterator，获取block
     return Status::EndOfFile("End of UnionIterator");
 }
 

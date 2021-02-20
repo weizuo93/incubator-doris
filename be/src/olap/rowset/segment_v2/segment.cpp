@@ -34,16 +34,18 @@ namespace segment_v2 {
 
 using strings::Substitute;
 
+/*打开segment文件*/
 Status Segment::open(std::string filename,
                      uint32_t segment_id,
                      const TabletSchema* tablet_schema,
                      std::shared_ptr<Segment>* output) {
     std::shared_ptr<Segment> segment(new Segment(std::move(filename), segment_id, tablet_schema));
-    RETURN_IF_ERROR(segment->_open());
+    RETURN_IF_ERROR(segment->_open()); // 打开segment文件
     output->swap(segment);
     return Status::OK();
 }
 
+/*Segment的构造函数*/
 Segment::Segment(
         std::string fname, uint32_t segment_id,
         const TabletSchema* tablet_schema)
@@ -54,12 +56,14 @@ Segment::Segment(
 
 Segment::~Segment() = default;
 
+/*打开segment文件*/
 Status Segment::_open() {
-    RETURN_IF_ERROR(_parse_footer());
-    RETURN_IF_ERROR(_create_column_readers());
+    RETURN_IF_ERROR(_parse_footer()); // 解析footer
+    RETURN_IF_ERROR(_create_column_readers()); // 创建 column reader
     return Status::OK();
 }
 
+/*针对当前segment文件创建SegmentIterator*/
 Status Segment::new_iterator(const Schema& schema,
                              const StorageReadOptions& read_options,
                              std::unique_ptr<RowwiseIterator>* iter) {
@@ -80,8 +84,8 @@ Status Segment::new_iterator(const Schema& schema,
     }
 
     RETURN_IF_ERROR(_load_index());
-    iter->reset(new SegmentIterator(this->shared_from_this(), schema));
-    iter->get()->init(read_options);
+    iter->reset(new SegmentIterator(this->shared_from_this(), schema)); // 创建SegmentIterator对象
+    iter->get()->init(read_options); // 使用read_options初始化创建的SegmentIterator对象
     return Status::OK();
 }
 
