@@ -58,7 +58,7 @@ using SegmentSharedPtr = std::shared_ptr<Segment>;
 // NOTE: This segment is used to a specified TabletSchema, when TabletSchema
 // is changed, this segment can not be used any more. For example, after a schema
 // change finished, client should disable all cached Segment for old TabletSchema.
-class Segment : public std::enable_shared_from_this<Segment> {
+class Segment : public std::enable_shared_from_this<Segment> { // 继承 enable_shared_from_this 类，就可以 在类内部构造该类对象的shared_ptr时, 即使该对象已经被shared_ptr管理着, 也不会造成对象被两个独立的智能指针管理.
 public:
     static Status open(std::string filename,
                        uint32_t segment_id,
@@ -131,19 +131,19 @@ private:
     // Map from column unique id to column ordinal in footer's ColumnMetaPB
     // If we can't find unique id from it, it means this segment is created
     // with an old schema.
-    std::unordered_map<uint32_t, uint32_t> _column_id_to_footer_ordinal;
+    std::unordered_map<uint32_t, uint32_t> _column_id_to_footer_ordinal; // 保存footer中ColumnMetaPB里column id到column ordinal的映射关系
 
     // ColumnReader for each column in TabletSchema. If ColumnReader is nullptr,
     // This means that this segment has no data for that column, which may be added
     // after this segment is generated.
-    std::vector<std::unique_ptr<ColumnReader>> _column_readers;
+    std::vector<std::unique_ptr<ColumnReader>> _column_readers; // 保存schema中所有列的column reader
 
     // used to guarantee that short key index will be loaded at most once in a thread-safe way
     DorisCallOnce<Status> _load_index_once;
     // used to hold short key index page in memory
     PageHandle _sk_index_handle;
     // short key index decoder
-    std::unique_ptr<ShortKeyIndexDecoder> _sk_index_decoder;
+    std::unique_ptr<ShortKeyIndexDecoder> _sk_index_decoder; // short key index decoder
 };
 
 }

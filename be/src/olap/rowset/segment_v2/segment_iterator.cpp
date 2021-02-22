@@ -48,8 +48,8 @@ public:
           _buf_pos(0),
           _buf_size(0),
           _eof(false) {
-        roaring_init_iterator(&bitmap.roaring, &_iter);
-        _read_next_batch();
+        roaring_init_iterator(&bitmap.roaring, &_iter); // 初始化iterator
+        _read_next_batch(); // 读取第一个batch的bitmap
     }
 
     ~BitmapRangeIterator() {
@@ -60,41 +60,44 @@ public:
 
     // read next range into [*from, *to) whose size <= max_range_size.
     // return false when there is no more range.
+    /*获取下一个bitmap范围，范围边界通过参数from和to传回，获取的是一个连续的bitmap范围*/
     bool next_range(uint32_t max_range_size, uint32_t* from, uint32_t* to) {
         if (_eof) {
             return false;
         }
-        *from = _buf[_buf_pos];
+        *from = _buf[_buf_pos]; // 获取起始位置，_buf_pos记录bitmap中的当前位置
         uint32_t range_size = 0;
         do {
             _last_val = _buf[_buf_pos];
             _buf_pos++;
             range_size++;
             if (_buf_pos == _buf_size) { // read next batch
-                _read_next_batch();
+                _read_next_batch(); //读取下一个batch的bitmap到成员变量_buf中
             }
-        } while (range_size < max_range_size && !_eof && _buf[_buf_pos] == _last_val + 1);
+        } while (range_size < max_range_size && !_eof && _buf[_buf_pos] == _last_val + 1); // 如果获取的range超过特定大小、或当前bitmap值与前一个bitmap值不连续，则循环退出
         *to = *from + range_size;
         return true;
     }
 
 private:
+    /*读取下一个batch的bitmap到成员变量_buf中*/
     void _read_next_batch() {
-        uint32_t n = roaring_read_uint32_iterator(&_iter, _buf, kBatchSize);
-        _buf_pos = 0;
-        _buf_size = n;
+        uint32_t n = roaring_read_uint32_iterator(&_iter, _buf, kBatchSize); // 读取下一个batch的bitmap到成员变量_buf中，kBatchSize表示需要读取的bitmap位数，函数返回值是真实读取的bitmap位数（因为iterator中bitmap的位数可能不足kBatchSize）
+        _buf_pos = 0;  // 复位batch中当前访问的位置为0
+        _buf_size = n; // 设置bitmap batch的大小
         _eof = n == 0;
     }
 
-    static const uint32_t kBatchSize = 256;
+    static const uint32_t kBatchSize = 256; // 设置batch大小的上限
     roaring_uint32_iterator_t _iter;
-    uint32_t _last_val;
-    uint32_t* _buf = nullptr;
-    uint32_t _buf_pos;
-    uint32_t _buf_size;
+    uint32_t _last_val;       // 记录访问的上一个bitmap的值
+    uint32_t* _buf = nullptr; // 保存一个batch的bitmap
+    uint32_t _buf_pos;        // 记录batch中当前访问的位置
+    uint32_t _buf_size;       // 保存当前batch的实际大小
     bool _eof;
 };
 
+/*SegmentIterator的构造函数*/
 SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment,
                                  const Schema& schema)
     : _segment(std::move(segment)),
@@ -106,6 +109,7 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment,
       _inited(false) {
 }
 
+/*SegmentIterator的析构函数*/
 SegmentIterator::~SegmentIterator() {
     for (auto iter : _column_iterators) {
         delete iter;
@@ -115,10 +119,11 @@ SegmentIterator::~SegmentIterator() {
     }
 }
 
+/*初始化SegmentIterator，使用参数传入的StorageReadOptions初始化成员变量_opts*/
 Status SegmentIterator::init(const StorageReadOptions& opts) {
     _opts = opts;
     if (opts.column_predicates != nullptr) {
-        _col_predicates = *(opts.column_predicates);
+        _col_predicates = *(opts.column_predicates); // 初始化成员变量_col_predicates
     }
     return Status::OK();
 }
@@ -134,7 +139,7 @@ Status SegmentIterator::_init() {
     RETURN_IF_ERROR(_init_bitmap_index_iterators()); // 初始化每一列的bitmap index iterator
     RETURN_IF_ERROR(_get_row_ranges_by_keys()); // 根据各个key的范围获取row id的范围
     RETURN_IF_ERROR(_get_row_ranges_by_column_conditions()); // 根据各个column condition的范围获取row id的范围
-    _init_lazy_materialization(); // 初始化lazy materialization
+    _init_lazy_materialization(); // 初始化lazy materialization（延迟物化）
     _range_iter.reset(new BitmapRangeIterator(_row_bitmap));
     return Status::OK();
 }
@@ -444,7 +449,7 @@ Status SegmentIterator::_seek_and_peek(rowid_t rowid) {
     return Status::OK();
 }
 
-/*初始化lazy materialization*/
+/*初始化lazy materialization（延迟物化）*/
 void SegmentIterator::_init_lazy_materialization() {
     if (!_col_predicates.empty()) {
         std::set<ColumnId> predicate_columns; // 保存谓词列的id
@@ -464,25 +469,27 @@ void SegmentIterator::_init_lazy_materialization() {
     }
 }
 
+/*获取参数column_ids中每一列的第pos行数据的ordinal*/
 Status SegmentIterator::_seek_columns(const std::vector<ColumnId>& column_ids, rowid_t pos) {
     _opts.stats->block_seek_num += 1;
     SCOPED_RAW_TIMER(&_opts.stats->block_seek_ns);
-    for (auto cid : column_ids) {
-        RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(pos));
+    for (auto cid : column_ids) { // 依次遍历需要读取的每一列
+        RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(pos)); // 通过当前列的iterator寻找当前列第pos行数据的ordinal
     }
     return Status::OK();
 }
 
+/*读取参数column_ids中每一列的多行数据到block中*/
 Status SegmentIterator::_read_columns(const std::vector<ColumnId>& column_ids,
                                       RowBlockV2* block,
                                       size_t row_offset,
                                       size_t nrows) {
-    for (auto cid : column_ids) {
-        auto column_block = block->column_block(cid);
-        ColumnBlockView dst(&column_block, row_offset);
-        size_t rows_read = nrows;
-        RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&rows_read, &dst));
-        block->set_delete_state(column_block.delete_state());
+    for (auto cid : column_ids) { // 依次遍历需要读取的每一列
+        auto column_block = block->column_block(cid);   // 获取当前列在block中的位置
+        ColumnBlockView dst(&column_block, row_offset); // 获取当前列的第row_offset在block中的位置
+        size_t rows_read = nrows; // 获取需要读取的行数
+        RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&rows_read, &dst)); // 读取当前列的多行数据到block中
+        block->set_delete_state(column_block.delete_state()); // 设置block的数据删除状态
         DCHECK_EQ(nrows, rows_read);
     }
     return Status::OK();
@@ -493,7 +500,7 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
     SCOPED_RAW_TIMER(&_opts.stats->block_load_ns);
     if (UNLIKELY(!_inited)) { // 判断SegmentIterator是否已经被初始化
         RETURN_IF_ERROR(_init()); // 会在第一次执行next_batch()函数时初始化SegmentIterator
-        if (_lazy_materialization_read) {
+        if (_lazy_materialization_read) { // 判断是否需要延迟物化
             _block_rowids.reserve(block->capacity());
         }
         _inited = true;
@@ -502,24 +509,25 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
     uint32_t nrows_read = 0;
     uint32_t nrows_read_limit = block->capacity(); // 设置读数据行数上限为block的容量
     _block_rowids.resize(nrows_read_limit);        // _block_rowids中保存读到block中的数据行的id
-    const auto& read_columns = _lazy_materialization_read ? _predicate_columns : block->schema()->column_ids();
+    const auto& read_columns = _lazy_materialization_read ? _predicate_columns : block->schema()->column_ids(); // 当需要延迟物化时，read_columns中只保存谓词列
 
     // phase 1: read rows selected by various index (indicated by _row_bitmap) into block
     // when using lazy-materialization-read, only columns with predicates are read
+    // 读取数据行到block中，读取的数据行依赖于bitmap
     do {
         uint32_t range_from;
         uint32_t range_to;
-        bool has_next_range = _range_iter->next_range(nrows_read_limit - nrows_read, &range_from, &range_to);
+        bool has_next_range = _range_iter->next_range(nrows_read_limit - nrows_read, &range_from, &range_to); // 获取下一个连续的bitmap范围
         if (!has_next_range) {
-            break;
+            break; //如果没有获取到bitmap范围，则循环结束
         }
         if (_cur_rowid == 0 || _cur_rowid != range_from) {
-            _cur_rowid = range_from;
-            RETURN_IF_ERROR(_seek_columns(read_columns, _cur_rowid));
+            _cur_rowid = range_from; // 更新成员变量
+            RETURN_IF_ERROR(_seek_columns(read_columns, _cur_rowid)); // 获取参数read_columns中每一列的第pos行数据的ordinal
         }
-        size_t rows_to_read = range_to - range_from;
-        RETURN_IF_ERROR(_read_columns(read_columns, block, nrows_read, rows_to_read));
-        _cur_rowid += rows_to_read;
+        size_t rows_to_read = range_to - range_from; // 计算要读的数据行数
+        RETURN_IF_ERROR(_read_columns(read_columns, block, nrows_read, rows_to_read)); // 读取参数read_columns中每一列的多行数据到block中
+        _cur_rowid += rows_to_read; // 读取多行数据到block之后，更新成员变量_cur_rowid
         if (_lazy_materialization_read) {
             for (uint32_t rid = range_from; rid < range_to; rid++) {
                 _block_rowids[nrows_read++] = rid;
@@ -527,34 +535,36 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
         } else {
             nrows_read += rows_to_read;
         }
-    } while (nrows_read < nrows_read_limit);
+    } while (nrows_read < nrows_read_limit); // 如果block的数据行数达到或超过上限，则循环退出
 
-    block->set_num_rows(nrows_read);
+    block->set_num_rows(nrows_read); // 设置block的数据行数
     block->set_selected_size(nrows_read);
     if (nrows_read == 0) {
         return Status::EndOfFile("no more data in segment");
     }
     _opts.stats->raw_rows_read += nrows_read;
-    _opts.stats->blocks_load += 1;
+    _opts.stats->blocks_load += 1; // 更新block的加载次数
 
     // phase 2: run vectorization evaluation on remaining predicates to prune rows.
     // block's selection vector will be set to indicate which rows have passed predicates.
     // TODO(hkp): optimize column predicate to check column block once for one column
+    // 根据谓词列对block中的数据行进行过滤
     if (!_col_predicates.empty()) {
         // init selection position index
         uint16_t selected_size = block->selected_size();
         uint16_t original_size = selected_size;
         SCOPED_RAW_TIMER(&_opts.stats->vec_cond_ns);
-        for (auto column_predicate : _col_predicates) {
-            auto column_block = block->column_block(column_predicate->column_id());
-            column_predicate->evaluate(&column_block, block->selection_vector(), &selected_size);
+        for (auto column_predicate : _col_predicates) { // 依次遍历每一个谓词列
+            auto column_block = block->column_block(column_predicate->column_id()); // 在block中获取当前谓词列的数据块
+            column_predicate->evaluate(&column_block, block->selection_vector(), &selected_size); // 根据谓词列对block中的数据行进行过滤
         }
         block->set_selected_size(selected_size);
-        block->set_num_rows(selected_size);
+        block->set_num_rows(selected_size); // 更新block的数据行数
         _opts.stats->rows_vec_cond_filtered += original_size - selected_size;
     }
 
     // phase 3: read non-predicate columns of rows that have passed predicates
+    // 如果需要延迟物化，则前面block中只读取了谓词列数据
     if (_lazy_materialization_read) {
         uint16_t i = 0;
         const uint16_t* sv = block->selection_vector();
@@ -567,8 +577,8 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
                 ++j;
             }
             uint16_t range_size = j - i;
-            RETURN_IF_ERROR(_seek_columns(_non_predicate_columns, _block_rowids[sv[i]]));
-            RETURN_IF_ERROR(_read_columns(_non_predicate_columns, block, sv[i], range_size));
+            RETURN_IF_ERROR(_seek_columns(_non_predicate_columns, _block_rowids[sv[i]]));// 获取参数_non_predicate_columns中每一列的第pos行数据的ordinal
+            RETURN_IF_ERROR(_read_columns(_non_predicate_columns, block, sv[i], range_size));// 读取参数_non_predicate_columns中每一列的多行数据到block中
             i += range_size;
         }
     }

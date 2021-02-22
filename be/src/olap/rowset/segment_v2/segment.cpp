@@ -58,7 +58,7 @@ Segment::~Segment() = default;
 
 /*打开segment文件*/
 Status Segment::_open() {
-    RETURN_IF_ERROR(_parse_footer()); // 解析footer
+    RETURN_IF_ERROR(_parse_footer()); // 解析segment文件的footer信息
     RETURN_IF_ERROR(_create_column_readers()); // 创建 column reader
     return Status::OK();
 }
@@ -83,46 +83,49 @@ Status Segment::new_iterator(const Schema& schema,
         }
     }
 
-    RETURN_IF_ERROR(_load_index());
+    RETURN_IF_ERROR(_load_index()); // 加载索引
     iter->reset(new SegmentIterator(this->shared_from_this(), schema)); // 创建SegmentIterator对象
     iter->get()->init(read_options); // 使用read_options初始化创建的SegmentIterator对象
     return Status::OK();
 }
 
+/*解析segment文件的footer信息*/
 Status Segment::_parse_footer() {
     // Footer := SegmentFooterPB, FooterPBSize(4), FooterPBChecksum(4), MagicNumber(4)
     std::unique_ptr<fs::ReadableBlock> rblock;
     fs::BlockManager* block_mgr = fs::fs_util::block_manager();
-    RETURN_IF_ERROR(block_mgr->open_block(_fname, &rblock));
+    RETURN_IF_ERROR(block_mgr->open_block(_fname, &rblock)); // 通过block mgr打开segment文件，并保存在rblock中
 
     uint64_t file_size;
-    RETURN_IF_ERROR(rblock->size(&file_size));
+    RETURN_IF_ERROR(rblock->size(&file_size)); // 计算segment文件大小
 
     if (file_size < 12) {
         return Status::Corruption(Substitute("Bad segment file $0: file size $1 < 12", _fname, file_size));
     }
 
     uint8_t fixed_buf[12];
-    RETURN_IF_ERROR(rblock->read(file_size - 12, Slice(fixed_buf, 12)));
+    RETURN_IF_ERROR(rblock->read(file_size - 12, Slice(fixed_buf, 12))); // 读取segment文件中最后12字节的数据到fixed_buf中，segment文件中最后12字节的数据为footer
 
     // validate magic number
-    if (memcmp(fixed_buf + 8, k_segment_magic, k_segment_magic_length) != 0) {
+    // 验证Magic Number
+    if (memcmp(fixed_buf + 8, k_segment_magic, k_segment_magic_length) != 0) { // 比较fixed_buf中的最后4个字节数据是否为"D0R1", 字符串k_segment_magic为"D0R1"，k_segment_magic_length值为4
         return Status::Corruption(Substitute("Bad segment file $0: magic number not match", _fname));
     }
 
     // read footer PB
-    uint32_t footer_length = decode_fixed32_le(fixed_buf);
+    uint32_t footer_length = decode_fixed32_le(fixed_buf); // 从segment文件中读取footer PB length
     if (file_size < 12 + footer_length) {
         return Status::Corruption(
             Substitute("Bad segment file $0: file size $1 < $2", _fname, file_size, 12 + footer_length));
     }
     std::string footer_buf;
     footer_buf.resize(footer_length);
-    RETURN_IF_ERROR(rblock->read(file_size - 12 - footer_length, footer_buf));
+    RETURN_IF_ERROR(rblock->read(file_size - 12 - footer_length, footer_buf)); // 从segment文件中读取footer PB，保存在footer_buf中
 
     // validate footer PB's checksum
-    uint32_t expect_checksum = decode_fixed32_le(fixed_buf + 4);
-    uint32_t actual_checksum = crc32c::Value(footer_buf.data(), footer_buf.size());
+    // 验证footer PB的checksum
+    uint32_t expect_checksum = decode_fixed32_le(fixed_buf + 4); // 从segment文件中读取checksum
+    uint32_t actual_checksum = crc32c::Value(footer_buf.data(), footer_buf.size()); // 根据footer_buf中保存的footer PB计算真正的checksum
     if (actual_checksum != expect_checksum) {
         return Status::Corruption(
             Substitute("Bad segment file $0: footer checksum not match, actual=$1 vs expect=$2",
@@ -130,7 +133,8 @@ Status Segment::_parse_footer() {
     }
 
     // deserialize footer PB
-    if (!_footer.ParseFromString(footer_buf)) {
+    // 反序列化footer PB
+    if (!_footer.ParseFromString(footer_buf)) { // 反序列化footer PB，保存在成员变量_footer中
         return Status::Corruption(Substitute("Bad segment file $0: failed to parse SegmentFooterPB", _fname));
     }
     return Status::OK();
@@ -185,6 +189,7 @@ Status Segment::_create_column_readers() {
     return Status::OK();
 }
 
+/*针对参数传入的列cid创建ColumnIterator，通过参数iter传回*/
 Status Segment::new_column_iterator(uint32_t cid, ColumnIterator** iter) {
     if (_column_readers[cid] == nullptr) {
         const TabletColumn& tablet_column = _tablet_schema->column(cid);
@@ -205,9 +210,10 @@ Status Segment::new_column_iterator(uint32_t cid, ColumnIterator** iter) {
     return _column_readers[cid]->new_iterator(iter);
 }
 
+/*针对参数传入的列cid创建BitmapIndexIterator，通过参数iter传回*/
 Status Segment::new_bitmap_index_iterator(uint32_t cid, BitmapIndexIterator** iter) {
     if (_column_readers[cid] != nullptr && _column_readers[cid]->has_bitmap_index()) {
-        return _column_readers[cid]->new_bitmap_index_iterator(iter);
+        return _column_readers[cid]->new_bitmap_index_iterator(iter); // 通过列cid的column reader创建BitmapIndexIterator
     }
     return Status::OK();
 }
