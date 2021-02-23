@@ -36,18 +36,20 @@ namespace segment_v2 {
 
 using strings::Substitute;
 
+/*创建ColumnReader对象，通过参数reader传回*/
 Status ColumnReader::create(const ColumnReaderOptions& opts,
                             const ColumnMetaPB& meta,
                             uint64_t num_rows,
                             const std::string& file_name,
                             std::unique_ptr<ColumnReader>* reader) {
     std::unique_ptr<ColumnReader> reader_local(
-        new ColumnReader(opts, meta, num_rows, file_name));
-    RETURN_IF_ERROR(reader_local->init());
+        new ColumnReader(opts, meta, num_rows, file_name)); // 创建ColumnReader对象
+    RETURN_IF_ERROR(reader_local->init()); // 初始化ColumnReader对象
     *reader = std::move(reader_local);
     return Status::OK();
 }
 
+/*ColumnReader的构造函数*/
 ColumnReader::ColumnReader(const ColumnReaderOptions& opts,
                            const ColumnMetaPB& meta,
                            uint64_t num_rows,
@@ -57,52 +59,56 @@ ColumnReader::ColumnReader(const ColumnReaderOptions& opts,
 
 ColumnReader::~ColumnReader() = default;
 
+/*ColumnReader初始化*/
 Status ColumnReader::init() {
-    _type_info = get_type_info((FieldType)_meta.type());
+    _type_info = get_type_info((FieldType)_meta.type()); // 获取当前列的类型
     if (_type_info == nullptr) {
         return Status::NotSupported(Substitute("unsupported typeinfo, type=$0", _meta.type()));
     }
-    RETURN_IF_ERROR(EncodingInfo::get(_type_info, _meta.encoding(), &_encoding_info));
-    RETURN_IF_ERROR(get_block_compression_codec(_meta.compression(), &_compress_codec));
+    RETURN_IF_ERROR(EncodingInfo::get(_type_info, _meta.encoding(), &_encoding_info)); // 根据该列的TypeInfo和EncodingTypePB获取编码信息，并保存在成员变量_encoding_info中
+    RETURN_IF_ERROR(get_block_compression_codec(_meta.compression(), &_compress_codec)); // 根据该列的压缩类型获取压缩编码，并保存在成员变量_compress_codec中
 
-    for (int i = 0; i < _meta.indexes_size(); i++) {
-        auto& index_meta = _meta.indexes(i);
+    for (int i = 0; i < _meta.indexes_size(); i++) { // 依次访问该列的每一种索引类型
+        auto& index_meta = _meta.indexes(i); // 获取索引元数据
         switch (index_meta.type()) {
         case ORDINAL_INDEX:
-            _ordinal_index_meta = &index_meta.ordinal_index();
+            _ordinal_index_meta = &index_meta.ordinal_index();   // 获取该列的ordinal index的元数据
             break;
         case ZONE_MAP_INDEX:
-            _zone_map_index_meta = &index_meta.zone_map_index();
+            _zone_map_index_meta = &index_meta.zone_map_index(); // 获取该列的zone map index的元数据
             break;
         case BITMAP_INDEX:
-            _bitmap_index_meta = &index_meta.bitmap_index();
+            _bitmap_index_meta = &index_meta.bitmap_index();     // 获取该列的bitmap index的元数据
             break;
         case BLOOM_FILTER_INDEX:
-            _bf_index_meta = &index_meta.bloom_filter_index();
+            _bf_index_meta = &index_meta.bloom_filter_index();   // 获取该列的bloom filter index的元数据
             break;
         default:
             return Status::Corruption(Substitute(
                     "Bad file $0: invalid column index type $1", _file_name, index_meta.type()));
         }
     }
-    if (_ordinal_index_meta == nullptr) {
+    if (_ordinal_index_meta == nullptr) { // 判断是否ordinal index的元数据缺失
         return Status::Corruption(Substitute(
                 "Bad file $0: missing ordinal index for column $1", _file_name, _meta.column_id()));
     }
     return Status::OK();
 }
 
+/*创建FileColumnIterator对象，通过参数iterator传回*/
 Status ColumnReader::new_iterator(ColumnIterator** iterator) {
-    *iterator = new FileColumnIterator(this);
+    *iterator = new FileColumnIterator(this); // 创建FileColumnIterator对象，FileColumnIterator被用来从segment文件中读取列数据
     return Status::OK();
 }
 
+/*创建BitmapIndexIterator，通过参数iterator传回*/
 Status ColumnReader::new_bitmap_index_iterator(BitmapIndexIterator** iterator) {
-    RETURN_IF_ERROR(_ensure_index_loaded());
-    RETURN_IF_ERROR(_bitmap_index->new_iterator(iterator));
+    RETURN_IF_ERROR(_ensure_index_loaded()); // 加载索引信息，如果索引信息已经被加载，则不会重复加载
+    RETURN_IF_ERROR(_bitmap_index->new_iterator(iterator)); // 创建BitmapIndexIterator
     return Status::OK();
 }
 
+/*读取并解压一个page的数据*/
 Status ColumnReader::read_page(const ColumnIteratorOptions& iter_opts, const PagePointer& pp,
                                PageHandle* handle, Slice* page_body, PageFooterPB* footer) {
     iter_opts.sanity_check();
@@ -115,90 +121,95 @@ Status ColumnReader::read_page(const ColumnIteratorOptions& iter_opts, const Pag
     opts.use_page_cache = iter_opts.use_page_cache;
     opts.kept_in_memory = _opts.kept_in_memory;
 
-    return PageIO::read_and_decompress_page(opts, handle, page_body, footer);
+    return PageIO::read_and_decompress_page(opts, handle, page_body, footer); // 读取并解压一个page的数据
 }
 
+/*根据zone map获取row范围*/
 Status ColumnReader::get_row_ranges_by_zone_map(CondColumn* cond_column,
                                                 CondColumn* delete_condition,
                                                 std::unordered_set<uint32_t>* delete_partial_filtered_pages,
                                                 RowRanges* row_ranges) {
-    RETURN_IF_ERROR(_ensure_index_loaded());
+    RETURN_IF_ERROR(_ensure_index_loaded()); // 加载索引信息，如果索引信息已经被加载，则不会重复加载
 
     std::vector<uint32_t> page_indexes;
-    RETURN_IF_ERROR(_get_filtered_pages(cond_column, delete_condition, delete_partial_filtered_pages, &page_indexes));
-    RETURN_IF_ERROR(_calculate_row_ranges(page_indexes, row_ranges));
+    RETURN_IF_ERROR(_get_filtered_pages(cond_column, delete_condition, delete_partial_filtered_pages, &page_indexes)); // 使用condition和delete_condition对当前列的page进行过滤，留下需要读取的page（通过参数page_indexes传回，并将存在部分数据被删除的page通过参数delete_partial_filtered_pages传回）
+    RETURN_IF_ERROR(_calculate_row_ranges(page_indexes, row_ranges)); // 根据参数传入的需要读取的page，计算需要读取的行范围，通过参数row_ranges返回
     return Status::OK();
 }
 
+/*判断segment当前列的zone map范围是否满足condition*/
 bool ColumnReader::match_condition(CondColumn* cond) const {
     if (_zone_map_index_meta == nullptr || cond == nullptr) {
         return true;
     }
-    FieldType type = _type_info->type();
-    std::unique_ptr<WrapperField> min_value(WrapperField::create_by_type(type, _meta.length()));
-    std::unique_ptr<WrapperField> max_value(WrapperField::create_by_type(type, _meta.length()));
-    _parse_zone_map(_zone_map_index_meta->segment_zone_map(), min_value.get(), max_value.get());
+    FieldType type = _type_info->type(); // 获取当前列的数据类型
+    std::unique_ptr<WrapperField> min_value(WrapperField::create_by_type(type, _meta.length())); // 根据当前列的数据类型创建变量，用于保存zone map的最小值
+    std::unique_ptr<WrapperField> max_value(WrapperField::create_by_type(type, _meta.length())); // 根据当前列的数据类型创建变量，用于保存zone map的最大值
+    _parse_zone_map(_zone_map_index_meta->segment_zone_map(), min_value.get(), max_value.get()); // 解析zone map，根据当前page的zone map获取该page的最小值和最大值
     return _zone_map_match_condition(
-            _zone_map_index_meta->segment_zone_map(), min_value.get(), max_value.get(), cond);
+            _zone_map_index_meta->segment_zone_map(), min_value.get(), max_value.get(), cond); // 判断整个segment当前列的zone map范围是否满足condition
 }
 
+/*解析zone map，根据当前page的zone map获取该page的最小值和最大值*/
 void ColumnReader::_parse_zone_map(const ZoneMapPB& zone_map,
                          WrapperField* min_value_container,
                          WrapperField* max_value_container) const {
     // min value and max value are valid if has_not_null is true
     if (zone_map.has_not_null()) {
-        min_value_container->from_string(zone_map.min());
-        max_value_container->from_string(zone_map.max());
+        min_value_container->from_string(zone_map.min()); // 获取zone map的最小值
+        max_value_container->from_string(zone_map.max()); // 获取zone map的最大值
     }
     // for compatible original Cond eval logic
     // TODO(hkp): optimize OlapCond
     if (zone_map.has_null()) {
         // for compatible, if exist null, original logic treat null as min
-        min_value_container->set_null();
+        min_value_container->set_null(); // 如果存在null值，则将zone map的最小值设置为null
         if (!zone_map.has_not_null()) {
             // for compatible OlapCond's 'is not null'
-            max_value_container->set_null();
+            max_value_container->set_null(); // 如果存在null值，同时存在非null值，则将zone map的最大值设置为null
         }
     }
 }
 
+/*判断当前的zone map范围是否满足condition*/
 bool ColumnReader::_zone_map_match_condition(const ZoneMapPB& zone_map,
                                              WrapperField* min_value_container,
                                              WrapperField* max_value_container,
                                              CondColumn* cond) const {
-    if (!zone_map.has_not_null() && !zone_map.has_null()) {
+    if (!zone_map.has_not_null() && !zone_map.has_null()) { // 判断当前的zone map中没有数据
         return false; // no data in this zone
     }
 
-    if (cond == nullptr) {
+    if (cond == nullptr) { // 判断condition是否为空
         return true;
     }
 
-    return cond->eval({min_value_container, max_value_container});
+    return cond->eval({min_value_container, max_value_container}); // 判断当前的zone map范围是否满足condition
 }
 
+/*使用condition和delete_condition对当前列的page进行过滤，留下需要读取的page（通过参数page_indexes传回，并将存在部分数据被删除的page通过参数delete_partial_filtered_pages传回）*/
 Status ColumnReader::_get_filtered_pages(CondColumn* cond_column,
                                          CondColumn* delete_condition,
                                          std::unordered_set<uint32_t>* delete_partial_filtered_pages,
                                          std::vector<uint32_t>* page_indexes) {
-    FieldType type = _type_info->type();
-    const std::vector<ZoneMapPB>& zone_maps = _zone_map_index->page_zone_maps();
-    int32_t page_size = _zone_map_index->num_pages();
-    std::unique_ptr<WrapperField> min_value(WrapperField::create_by_type(type, _meta.length()));
-    std::unique_ptr<WrapperField> max_value(WrapperField::create_by_type(type, _meta.length()));
-    for (int32_t i = 0; i < page_size; ++i) {
-        _parse_zone_map(zone_maps[i], min_value.get(), max_value.get());
-        if (_zone_map_match_condition(zone_maps[i], min_value.get(), max_value.get(), cond_column)) {
+    FieldType type = _type_info->type(); // 获取该列的数据类型
+    const std::vector<ZoneMapPB>& zone_maps = _zone_map_index->page_zone_maps(); // 根据zone map索引获取所有page的zone map
+    int32_t page_size = _zone_map_index->num_pages(); // 获取含有zone map索引的page数目
+    std::unique_ptr<WrapperField> min_value(WrapperField::create_by_type(type, _meta.length())); // 根据当前列的数据类型创建变量，用于保存zone map的最小值
+    std::unique_ptr<WrapperField> max_value(WrapperField::create_by_type(type, _meta.length())); // 根据当前列的数据类型创建变量，用于保存zone map的最大值
+    for (int32_t i = 0; i < page_size; ++i) { // 依次遍历每一个含有zone map索引的page
+        _parse_zone_map(zone_maps[i], min_value.get(), max_value.get()); // 解析zone map，根据当前page的zone map获取该page的最小值和最大值
+        if (_zone_map_match_condition(zone_maps[i], min_value.get(), max_value.get(), cond_column)) { // 判断当前的zone map范围是否满足condition
             bool should_read = true;
             if (delete_condition != nullptr) {
-                int state = delete_condition->del_eval({min_value.get(), max_value.get()});
+                int state = delete_condition->del_eval({min_value.get(), max_value.get()}); // 判断min_value与max_value之间的数据是否满足delete_condition
                 if (state == DEL_SATISFIED) {
-                    should_read = false;
+                    should_read = false; // 如果min_value与max_value之间的数据均被删除了，则该page可以不用读，直接跳过
                 } else if (state == DEL_PARTIAL_SATISFIED) {
-                    delete_partial_filtered_pages->insert(i);
+                    delete_partial_filtered_pages->insert(i); // 如果min_value与max_value之间的数据部分被删除了，则该page需要被读取，将该page添加到delete_partial_filtered_pages中，通过函数参数返回
                 }
             }
-            if (should_read) {
+            if (should_read) { // 如果该page需要读取，则将该page添加到page_indexes中，通过函数参数返回
                 page_indexes->push_back(i);
             }
         }
@@ -206,90 +217,99 @@ Status ColumnReader::_get_filtered_pages(CondColumn* cond_column,
     return Status::OK();
 }
 
+/*根据参数传入的需要读取的page，计算需要读取的行范围，通过参数row_ranges返回*/
 Status ColumnReader::_calculate_row_ranges(const std::vector<uint32_t>& page_indexes, RowRanges* row_ranges) {
     row_ranges->clear();
-    for (auto i : page_indexes) {
-        ordinal_t page_first_id = _ordinal_index->get_first_ordinal(i);
-        ordinal_t page_last_id = _ordinal_index->get_last_ordinal(i);
-        RowRanges page_row_ranges(RowRanges::create_single(page_first_id, page_last_id + 1));
-        RowRanges::ranges_union(*row_ranges, page_row_ranges, row_ranges);
+    for (auto i : page_indexes) { // 依次遍历page_indexes中每一个需要读取的page
+        ordinal_t page_first_id = _ordinal_index->get_first_ordinal(i); // 获取当前page中第一行的id
+        ordinal_t page_last_id = _ordinal_index->get_last_ordinal(i);   // 获取当前page中最后一行的id
+        RowRanges page_row_ranges(RowRanges::create_single(page_first_id, page_last_id + 1)); // 根据当前page中第一行的id和最后一行的id创建行范围
+        RowRanges::ranges_union(*row_ranges, page_row_ranges, row_ranges); // 将当前page的行范围与其他page的行范围进行合并
     }
     return Status::OK();
 }
 
+/*根据bloom filter获取row范围*/
+// BloomFilter按Page粒度生成，在数据写入一个完整的Page时，Doris会根据Hash策略同时生成这个Page的BloomFilter索引数据。
 Status ColumnReader::get_row_ranges_by_bloom_filter(CondColumn* cond_column, RowRanges* row_ranges) {
-    RETURN_IF_ERROR(_ensure_index_loaded());
+    RETURN_IF_ERROR(_ensure_index_loaded()); // 加载索引信息，如果索引信息已经被加载，则不会重复加载
     RowRanges bf_row_ranges;
     std::unique_ptr<BloomFilterIndexIterator> bf_iter;
-    RETURN_IF_ERROR(_bloom_filter_index->new_iterator(&bf_iter));
-    size_t range_size = row_ranges->range_size();
+    RETURN_IF_ERROR(_bloom_filter_index->new_iterator(&bf_iter)); // 创建BloomFilterIndexIterator对象
+    size_t range_size = row_ranges->range_size(); // 获取row_ranges中连续row范围的个数
     // get covered page ids
     std::set<uint32_t> page_ids;
-    for (int i = 0; i < range_size; ++i) {
-        int64_t from = row_ranges->get_range_from(i);
+    for (int i = 0; i < range_size; ++i) { // 依次遍历row_ranges中连续row范围的个数
+        int64_t from = row_ranges->get_range_from(i); // 获取当前row范围的起始值
         int64_t idx = from;
-        int64_t to = row_ranges->get_range_to(i);
-        auto iter = _ordinal_index->seek_at_or_before(from);
-        while (idx < to) {
-            page_ids.insert(iter.page_index());
+        int64_t to = row_ranges->get_range_to(i);     // 获取当前row范围的结束值
+        auto iter = _ordinal_index->seek_at_or_before(from); // 寻找当前row范围的起始值所在的page，每个page都对应一个ordinal索引项。ordinal index记录了每个page的位置offset、大小size和第一个数据项行号信息，即ordinal
+        while (idx < to) { // page的最后一行超过当前row范围的结束值
+            page_ids.insert(iter.page_index()); // 将当前page添加到page_ids中
             idx = iter.last_ordinal() + 1;
-            iter.next();
+            iter.next(); // 访问下一个page
         }
     }
-    for (auto& pid : page_ids) {
+    for (auto& pid : page_ids) { // 依次遍历中的每一个page
         std::unique_ptr<BloomFilter> bf;
-        RETURN_IF_ERROR(bf_iter->read_bloom_filter(pid, &bf));
-        if (cond_column->eval(bf.get())) {
-            bf_row_ranges.add(RowRange(_ordinal_index->get_first_ordinal(pid),
-                    _ordinal_index->get_last_ordinal(pid) + 1));
+        RETURN_IF_ERROR(bf_iter->read_bloom_filter(pid, &bf)); // 读取当前page的bloom filter
+        if (cond_column->eval(bf.get())) { // 判断当前page的bloom filter是否满足condition
+            bf_row_ranges.add(RowRange(_ordinal_index->get_first_ordinal(pid), // 根据ordinal index获取当前page的row范围，并将获取到的row范围添加到bf_row_ranges
+                    _ordinal_index->get_last_ordinal(pid) + 1)); // _ordinal_index->get_first_ordinal(pid)表示page的第一行，_ordinal_index->get_last_ordinal(pid)表示page的最后一行
         }
     }
-    RowRanges::ranges_intersection(*row_ranges, bf_row_ranges, row_ranges);
+    RowRanges::ranges_intersection(*row_ranges, bf_row_ranges, row_ranges); // 将bloom filter生成的row范围和参数传入的row范围取交集
     return Status::OK();
 }
 
+/*加载ordinal index*/
 Status ColumnReader::_load_ordinal_index(bool use_page_cache, bool kept_in_memory) {
     DCHECK(_ordinal_index_meta != nullptr);
-    _ordinal_index.reset(new OrdinalIndexReader(_file_name, _ordinal_index_meta, _num_rows));
-    return _ordinal_index->load(use_page_cache, kept_in_memory);
+    _ordinal_index.reset(new OrdinalIndexReader(_file_name, _ordinal_index_meta, _num_rows)); // 创建OrdinalIndexReader对象
+    return _ordinal_index->load(use_page_cache, kept_in_memory); // 加载ordinal索引
 }
 
+/*加载zone map index*/
 Status ColumnReader::_load_zone_map_index(bool use_page_cache, bool kept_in_memory) {
     if (_zone_map_index_meta != nullptr) {
-        _zone_map_index.reset(new ZoneMapIndexReader(_file_name, _zone_map_index_meta));
-        return _zone_map_index->load(use_page_cache, kept_in_memory);
+        _zone_map_index.reset(new ZoneMapIndexReader(_file_name, _zone_map_index_meta)); // 创建ZoneMapIndexReader对象
+        return _zone_map_index->load(use_page_cache, kept_in_memory); // 加载zone map索引
     }
     return Status::OK();
 }
 
+/*加载bitmap index*/
 Status ColumnReader::_load_bitmap_index(bool use_page_cache, bool kept_in_memory) {
     if (_bitmap_index_meta != nullptr) {
-        _bitmap_index.reset(new BitmapIndexReader(_file_name, _bitmap_index_meta));
-        return _bitmap_index->load(use_page_cache, kept_in_memory);
+        _bitmap_index.reset(new BitmapIndexReader(_file_name, _bitmap_index_meta)); // 创建BitmapIndexReader对象
+        return _bitmap_index->load(use_page_cache, kept_in_memory); // 加载bitmap map索引
     }
     return Status::OK();
 }
 
+/*加载bloom filter index*/
 Status ColumnReader::_load_bloom_filter_index(bool use_page_cache, bool kept_in_memory) {
     if (_bf_index_meta != nullptr) {
-        _bloom_filter_index.reset(new BloomFilterIndexReader(_file_name, _bf_index_meta));
-        return _bloom_filter_index->load(use_page_cache, kept_in_memory);
+        _bloom_filter_index.reset(new BloomFilterIndexReader(_file_name, _bf_index_meta)); // 创建BloomFilterIndexReader对象
+        return _bloom_filter_index->load(use_page_cache, kept_in_memory); // 加载bloom filter索引
     }
     return Status::OK();
 }
 
+/*获取当前列的第一个page的OrdinalPageIndexIterator对象*/
 Status ColumnReader::seek_to_first(OrdinalPageIndexIterator* iter) {
-    RETURN_IF_ERROR(_ensure_index_loaded());
-    *iter = _ordinal_index->begin();
+    RETURN_IF_ERROR(_ensure_index_loaded()); // 加载索引信息，如果索引信息已经被加载，则不会重复加载
+    *iter = _ordinal_index->begin(); // 获取当前列的第一个page的OrdinalPageIndexIterator对象
     if (!iter->valid()) {
         return Status::NotFound("Failed to seek to first rowid");
     }
     return Status::OK();
 }
 
+/*寻找参数ordinal所在的page,通过参数iter传回*/
 Status ColumnReader::seek_at_or_before(ordinal_t ordinal, OrdinalPageIndexIterator* iter) {
-    RETURN_IF_ERROR(_ensure_index_loaded());
-    *iter = _ordinal_index->seek_at_or_before(ordinal);
+    RETURN_IF_ERROR(_ensure_index_loaded()); // 加载索引信息，如果索引信息已经被加载，则不会重复加载
+    *iter = _ordinal_index->seek_at_or_before(ordinal); // 寻找参数ordinal所在的page，OrdinalPageIndexIterator类型的iter会指向找到的page
     if (!iter->valid()) {
         return Status::NotFound(Substitute("Failed to seek to ordinal $0, ", ordinal));
     }

@@ -73,12 +73,14 @@ public:
     OrdinalPageIndexIterator seek_at_or_before(ordinal_t ordinal);
     inline OrdinalPageIndexIterator begin();
     inline OrdinalPageIndexIterator end();
+    /*获取参数传入的page的ordinal，即page第一行数据的行号*/
     ordinal_t get_first_ordinal(int page_index) const {
         return _ordinals[page_index];
     }
 
+    /*获取参数传入的page的最后一行数据的行号*/
     ordinal_t get_last_ordinal(int page_index) const {
-        return get_first_ordinal(page_index + 1) - 1;
+        return get_first_ordinal(page_index + 1) - 1; // 下一个page第一行数据的行号减1，即当前page最后一行数据的行号
     }
 
     // for test

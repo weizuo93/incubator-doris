@@ -139,13 +139,14 @@ private:
 
     // Read and load necessary column indexes into memory if it hasn't been loaded.
     // May be called multiple times, subsequent calls will no op.
+    // 加载索引信息，可能会被多次调用，但是只会加载一次索引信息
     Status _ensure_index_loaded() {
         return _load_index_once.call([this] {
-            bool use_page_cache = !config::disable_storage_page_cache;
-            RETURN_IF_ERROR(_load_zone_map_index(use_page_cache, _opts.kept_in_memory));
-            RETURN_IF_ERROR(_load_ordinal_index(use_page_cache, _opts.kept_in_memory));
-            RETURN_IF_ERROR(_load_bitmap_index(use_page_cache, _opts.kept_in_memory));
-            RETURN_IF_ERROR(_load_bloom_filter_index(use_page_cache, _opts.kept_in_memory));
+            bool use_page_cache = !config::disable_storage_page_cache; // 获取“是否使用page cache”的配置
+            RETURN_IF_ERROR(_load_zone_map_index(use_page_cache, _opts.kept_in_memory)); // 加载zone map index
+            RETURN_IF_ERROR(_load_ordinal_index(use_page_cache, _opts.kept_in_memory));  // 加载ordinal index
+            RETURN_IF_ERROR(_load_bitmap_index(use_page_cache, _opts.kept_in_memory));   // 加载bitmap index
+            RETURN_IF_ERROR(_load_bloom_filter_index(use_page_cache, _opts.kept_in_memory)); // 加载bloom filter index
             return Status::OK();
         });
     }

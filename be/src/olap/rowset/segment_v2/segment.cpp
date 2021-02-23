@@ -198,18 +198,18 @@ Status Segment::new_column_iterator(uint32_t cid, ColumnIterator** iter) {
         if (!tablet_column.has_default_value() && !tablet_column.is_nullable()) { // 判断当前列是否没有默认值并且不能为null
             return Status::InternalError("invalid nonexistent column without default value.");
         }
-        std::unique_ptr<DefaultValueColumnIterator> default_value_iter(           // 创建ColumnIterator对象
+        std::unique_ptr<DefaultValueColumnIterator> default_value_iter(           // 创建DefaultValueColumnIterator对象，DefaultValueColumnIterator对象被用来读取列的默认值
                 new DefaultValueColumnIterator(tablet_column.has_default_value(),
                 tablet_column.default_value(),
                 tablet_column.is_nullable(),
                 tablet_column.type(),
                 tablet_column.length()));
         ColumnIteratorOptions iter_opts;
-        RETURN_IF_ERROR(default_value_iter->init(iter_opts)); // 初始化新创建的ColumnIterator对象
+        RETURN_IF_ERROR(default_value_iter->init(iter_opts)); // 初始化新创建的DefaultValueColumnIterator对象
         *iter = default_value_iter.release();
         return Status::OK();
     }
-    return _column_readers[cid]->new_iterator(iter); // 针对当前列创建ColumnIterator对象
+    return _column_readers[cid]->new_iterator(iter); // 针对当前列创建FileColumnIterator对象，FileColumnIterator被用来从segment文件中读取列数据
 }
 
 /*针对参数传入的列cid创建BitmapIndexIterator，通过参数iter传回*/

@@ -133,7 +133,7 @@ Status SegmentIterator::_init() {
     DorisMetrics::instance()->segment_read_total.increment(1);
     // get file handle from file descriptor of segment
     fs::BlockManager* block_mgr = fs::fs_util::block_manager();
-    RETURN_IF_ERROR(block_mgr->open_block(_segment->_fname, &_rblock));
+    RETURN_IF_ERROR(block_mgr->open_block(_segment->_fname, &_rblock)); // 通过block mgr打开segment文件
     _row_bitmap.addRange(0, _segment->num_rows()); // 初始化成员变量_row_bitmap的范围为整个segment文件的所有行
     RETURN_IF_ERROR(_init_return_column_iterators()); // 初始化返回列的iterator
     RETURN_IF_ERROR(_init_bitmap_index_iterators()); // 初始化每一列的bitmap index iterator
