@@ -140,42 +140,44 @@ Status Segment::_parse_footer() {
     return Status::OK();
 }
 
+/*加载segment文件的前缀索引（short key index）*/
 Status Segment::_load_index() {
     return _load_index_once.call([this] {
         // read and parse short key index page
         std::unique_ptr<fs::ReadableBlock> rblock;
         fs::BlockManager* block_mgr = fs::fs_util::block_manager();
-        RETURN_IF_ERROR(block_mgr->open_block(_fname, &rblock));
+        RETURN_IF_ERROR(block_mgr->open_block(_fname, &rblock)); // 通过block mgr打开segment文件，并保存在rblock中
 
         PageReadOptions opts;
         opts.rblock = rblock.get();
-        opts.page_pointer = PagePointer(_footer.short_key_index_page());
+        opts.page_pointer = PagePointer(_footer.short_key_index_page()); // 从footerPB获取short key（前缀索引）
         opts.codec = nullptr; // short key index page uses NO_COMPRESSION for now
         OlapReaderStatistics tmp_stats;
         opts.stats = &tmp_stats;
 
         Slice body;
         PageFooterPB footer;
-        RETURN_IF_ERROR(PageIO::read_and_decompress_page(opts, &_sk_index_handle, &body, &footer));
+        RETURN_IF_ERROR(PageIO::read_and_decompress_page(opts, &_sk_index_handle, &body, &footer)); // 根据参数传入的opts读取并解压short key index page
         DCHECK_EQ(footer.type(), SHORT_KEY_PAGE);
         DCHECK(footer.has_short_key_page_footer());
 
-        _sk_index_decoder.reset(new ShortKeyIndexDecoder);
-        return _sk_index_decoder->parse(body, footer.short_key_page_footer());
+        _sk_index_decoder.reset(new ShortKeyIndexDecoder); // 初始化成员变量_sk_index_decoder
+        return _sk_index_decoder->parse(body, footer.short_key_page_footer()); // 解析short key page footer
     });
 }
 
+/*创建column reader*/
 Status Segment::_create_column_readers() {
-    for (uint32_t ordinal = 0; ordinal < _footer.columns().size(); ++ordinal) {
-        auto& column_pb = _footer.columns(ordinal);
-        _column_id_to_footer_ordinal.emplace(column_pb.unique_id(), ordinal);
+    for (uint32_t ordinal = 0; ordinal < _footer.columns().size(); ++ordinal) { // 依次遍历footerPB中的每一列
+        auto& column_pb = _footer.columns(ordinal); // 从footerPB中获取当前列的PB
+        _column_id_to_footer_ordinal.emplace(column_pb.unique_id(), ordinal); // 将当前列id到column ordinal的映射关系保存在成员变量_column_id_to_footer_ordinal中
     }
 
     _column_readers.resize(_tablet_schema->columns().size());
-    for (uint32_t ordinal = 0; ordinal < _tablet_schema->num_columns(); ++ordinal) {
+    for (uint32_t ordinal = 0; ordinal < _tablet_schema->num_columns(); ++ordinal) { // 依次遍历schema中的每一列
         auto& column = _tablet_schema->columns()[ordinal];
         auto iter = _column_id_to_footer_ordinal.find(column.unique_id());
-        if (iter == _column_id_to_footer_ordinal.end()) {
+        if (iter == _column_id_to_footer_ordinal.end()) { // 判断schema中的当前列是否在footerPB中存在
             continue;
         }
 
@@ -183,31 +185,31 @@ Status Segment::_create_column_readers() {
         opts.kept_in_memory = _tablet_schema->is_in_memory();
         std::unique_ptr<ColumnReader> reader;
         RETURN_IF_ERROR(ColumnReader::create(
-            opts, _footer.columns(iter->second), _footer.num_rows(), _fname, &reader));
-        _column_readers[ordinal] = std::move(reader);
+            opts, _footer.columns(iter->second), _footer.num_rows(), _fname, &reader)); // 针对当前列创建column reader，通过参数reader传回
+        _column_readers[ordinal] = std::move(reader); // 将当前列的reader保存在成员变量_column_readers中
     }
     return Status::OK();
 }
 
 /*针对参数传入的列cid创建ColumnIterator，通过参数iter传回*/
 Status Segment::new_column_iterator(uint32_t cid, ColumnIterator** iter) {
-    if (_column_readers[cid] == nullptr) {
-        const TabletColumn& tablet_column = _tablet_schema->column(cid);
-        if (!tablet_column.has_default_value() && !tablet_column.is_nullable()) {
+    if (_column_readers[cid] == nullptr) { // 判断参数传入的列是否不在footerPB中存在
+        const TabletColumn& tablet_column = _tablet_schema->column(cid); // 从schema中获取当前列
+        if (!tablet_column.has_default_value() && !tablet_column.is_nullable()) { // 判断当前列是否没有默认值并且不能为null
             return Status::InternalError("invalid nonexistent column without default value.");
         }
-        std::unique_ptr<DefaultValueColumnIterator> default_value_iter(
+        std::unique_ptr<DefaultValueColumnIterator> default_value_iter(           // 创建ColumnIterator对象
                 new DefaultValueColumnIterator(tablet_column.has_default_value(),
                 tablet_column.default_value(),
                 tablet_column.is_nullable(),
                 tablet_column.type(),
                 tablet_column.length()));
         ColumnIteratorOptions iter_opts;
-        RETURN_IF_ERROR(default_value_iter->init(iter_opts));
+        RETURN_IF_ERROR(default_value_iter->init(iter_opts)); // 初始化新创建的ColumnIterator对象
         *iter = default_value_iter.release();
         return Status::OK();
     }
-    return _column_readers[cid]->new_iterator(iter);
+    return _column_readers[cid]->new_iterator(iter); // 针对当前列创建ColumnIterator对象
 }
 
 /*针对参数传入的列cid创建BitmapIndexIterator，通过参数iter传回*/
