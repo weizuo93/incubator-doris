@@ -63,21 +63,22 @@ Status Segment::_open() {
     return Status::OK();
 }
 
-/*针对当前segment文件创建SegmentIterator*/
+/*针对当前segment文件创建SegmentIterator，通过参数iter传回*/
 Status Segment::new_iterator(const Schema& schema,
                              const StorageReadOptions& read_options,
                              std::unique_ptr<RowwiseIterator>* iter) {
     DCHECK_NOTNULL(read_options.stats);
     // trying to prune the current segment by segment-level zone map
     if (read_options.conditions != nullptr) {
-        for (auto& column_condition : read_options.conditions->columns()) {
-            int32_t column_id = column_condition.first;
+        for (auto& column_condition : read_options.conditions->columns()) { // 依次遍历每一个condition
+            int32_t column_id = column_condition.first; // 获取当前condition涉及到的列
             if (_column_readers[column_id] == nullptr || !_column_readers[column_id]->has_zone_map()) {
+                // 如果当前condition涉及到的列的column reader不存在，或当前condition涉及到的列没有zone map，则判断下一个condition
                 continue;
             }
-            if (!_column_readers[column_id]->match_condition(column_condition.second)) {
+            if (!_column_readers[column_id]->match_condition(column_condition.second)) { // 如果segment当前列的zone map范围不满足condition
                 // any condition not satisfied, return.
-                iter->reset(new EmptySegmentIterator(schema));
+                iter->reset(new EmptySegmentIterator(schema)); // 创建EmptySegmentIterator对象来初始化iter
                 return Status::OK();
             }
         }
