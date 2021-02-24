@@ -316,35 +316,39 @@ Status ColumnReader::seek_at_or_before(ordinal_t ordinal, OrdinalPageIndexIterat
     return Status::OK();
 }
 
+/*FileColumnIterator构造函数*/
 FileColumnIterator::FileColumnIterator(ColumnReader* reader) : _reader(reader) {
 }
 
 FileColumnIterator::~FileColumnIterator() = default;
 
+/*寻找当前列的第一个page，并寻找page中的第一行数据*/
 Status FileColumnIterator::seek_to_first() {
-    RETURN_IF_ERROR(_reader->seek_to_first(&_page_iter));
-    RETURN_IF_ERROR(_read_data_page(_page_iter));
+    RETURN_IF_ERROR(_reader->seek_to_first(&_page_iter)); // 通过column reader获取当前列的第一个page
+    RETURN_IF_ERROR(_read_data_page(_page_iter)); // 读取当前列中_page_iter指向的page，保存在成员变量_page中
 
-    _seek_to_pos_in_page(_page.get(), 0);
-    _current_ordinal = 0;
+    _seek_to_pos_in_page(_page.get(), 0); // 更新_page中的offset_in_page值为0，寻找page中的第一行数据
+    _current_ordinal = 0; // 更新成员变量_current_ordinal（记录当前列中当前访问的行id）为0
     return Status::OK();
 }
 
+/*寻找当前列中行号为参数传入的ord的数据*/
 Status FileColumnIterator::seek_to_ordinal(ordinal_t ord) {
     // if current page contains this row, we don't need to seek
-    if (_page == nullptr || !_page->contains(ord)) {
-        RETURN_IF_ERROR(_reader->seek_at_or_before(ord, &_page_iter));
-        RETURN_IF_ERROR(_read_data_page(_page_iter));
+    if (_page == nullptr || !_page->contains(ord)) { // 判断当前page中是否包含参数传入的行号ord
+        RETURN_IF_ERROR(_reader->seek_at_or_before(ord, &_page_iter)); // 通过column reader寻找行号为ord的数据行所在的page，通过参数_page_iter传回
+        RETURN_IF_ERROR(_read_data_page(_page_iter)); // 读取_page_iter所指向的page，其中会更新当前page为_page_iter所指向的page（更新成员变量_page）
     }
-    _seek_to_pos_in_page(_page.get(), ord - _page->first_ordinal);
-    _current_ordinal = ord;
+    _seek_to_pos_in_page(_page.get(), ord - _page->first_ordinal); // 在当前page中寻找行号为ord的数据行
+    _current_ordinal = ord; // 更新成员变量_current_ordinal（记录当前列中当前访问的行id）为ord
     return Status::OK();
 }
 
+/*寻找page中的第offset_in_page行数据，更新page的成员变量offset_in_page值为参数传入的offset_in_page*/
 void FileColumnIterator::_seek_to_pos_in_page(ParsedPage* page, ordinal_t offset_in_page) {
-    if (page->offset_in_page == offset_in_page) {
+    if (page->offset_in_page == offset_in_page) { // page的成员变量offset_in_page记录page中当前访问行的id
         // fast path, do nothing
-        return;
+        return;                // 如果page中的当前访问行的id与参数传入的offset_in_page相同，则直接返回
     }
 
     ordinal_t pos_in_data = offset_in_page;
@@ -365,32 +369,33 @@ void FileColumnIterator::_seek_to_pos_in_page(ParsedPage* page, ordinal_t offset
         pos_in_data = offset_in_data + skips - skip_nulls;
     }
 
-    page->data_decoder->seek_to_position_in_page(pos_in_data);
-    page->offset_in_page = offset_in_page;
+    page->data_decoder->seek_to_position_in_page(pos_in_data); // 通过page的data_decoder寻找page中的第pos_in_data行
+    page->offset_in_page = offset_in_page; // 更新page的成员变量offset_in_page
 }
 
+/*读取当前列的多行(batch)数据到segment iterator的block（column block）中*/
 Status FileColumnIterator::next_batch(size_t* n, ColumnBlockView* dst) {
     size_t remaining = *n;
     while (remaining > 0) {
-        if (!_page->has_remaining()) {
+        if (!_page->has_remaining()) { // 判断当前page中是否还有待读取的数据行
             bool eos = false;
-            RETURN_IF_ERROR(_load_next_page(&eos));
+            RETURN_IF_ERROR(_load_next_page(&eos)); // 加载下一个page
             if (eos) {
                 break;
             }
         }
 
-        auto iter = _delete_partial_statisfied_pages.find(_page->page_index);
+        auto iter = _delete_partial_statisfied_pages.find(_page->page_index); // 判断当前page是否存在部分数据被删除
         bool is_partial = iter != _delete_partial_statisfied_pages.end();
         if (is_partial) {
-            dst->column_block()->set_delete_state(DEL_PARTIAL_SATISFIED);
+            dst->column_block()->set_delete_state(DEL_PARTIAL_SATISFIED); // 设置当前列本次数据读取的数据部分删除状态
         } else {
             dst->column_block()->set_delete_state(DEL_NOT_SATISFIED);
         }
         // number of rows to be read from this page
-        size_t nrows_in_page = std::min(remaining, _page->remaining());
+        size_t nrows_in_page = std::min(remaining, _page->remaining()); // 计算需要从当前page中读取的数据行数
         size_t nrows_to_read = nrows_in_page;
-        if (_page->has_null) {
+        if (_page->has_null) { // page中存在null值
             // when this page contains NULLs we read data in some runs
             // first we read null bits in the same value, if this is null, we
             // don't need to read value from page.
@@ -399,85 +404,88 @@ Status FileColumnIterator::next_batch(size_t* n, ColumnBlockView* dst) {
             // will lead too many function calls to PageDecoder
             while (nrows_to_read > 0) {
                 bool is_null = false;
-                size_t this_run = _page->null_decoder.GetNextRun(&is_null, nrows_to_read);
+                size_t this_run = _page->null_decoder.GetNextRun(&is_null, nrows_to_read); // 从当前page中读取一次数据，返回的this_run表示本次读取的行数，本次读取的this_run行数据是否为null值通过参数is_null传回，本次读取的最大数据行数通过参数nrows_to_read限定
                 // we use num_rows only for CHECK
                 size_t num_rows = this_run;
-                if (!is_null) {
-                    RETURN_IF_ERROR(_page->data_decoder->next_batch(&num_rows, dst));
+                if (!is_null) { // 如果本次读取的当前page中this_run行数据不是null值
+                    RETURN_IF_ERROR(_page->data_decoder->next_batch(&num_rows, dst)); // 从当前page中读取num_rows行数据到column block中
                     DCHECK_EQ(this_run, num_rows);
                 }
 
                 // set null bits
-                dst->set_null_bits(this_run, is_null);
+                dst->set_null_bits(this_run, is_null); // 设置本次读取的当前page中this_run行数据是否为null
 
-                nrows_to_read -= this_run;
-                _page->offset_in_page += this_run;
-                dst->advance(this_run);
-                _current_ordinal += this_run;
+                nrows_to_read -= this_run;         // 本次读取当前page中this_run行数据之后，更新变量nrows_to_read（待读取的行数）
+                _page->offset_in_page += this_run; // 本次读取当前page中this_run行数据之后，更新page的当前行
+                dst->advance(this_run);            // 本次读取当前page中this_run行数据之后，将column block指针后移this_run行
+                _current_ordinal += this_run;      // 本次读取当前page中this_run行数据之后，当前列的当前行后移nrows_to_read位
             }
         } else {
-            RETURN_IF_ERROR(_page->data_decoder->next_batch(&nrows_to_read, dst));
+            RETURN_IF_ERROR(_page->data_decoder->next_batch(&nrows_to_read, dst)); // 从当前page中读取nrows_to_read行数据到column block中
             DCHECK_EQ(nrows_to_read, nrows_in_page);
 
             if (dst->is_nullable()) {
                 dst->set_null_bits(nrows_to_read, false);
             }
 
-            _page->offset_in_page += nrows_to_read;
-            dst->advance(nrows_to_read);
-            _current_ordinal += nrows_to_read;
+            _page->offset_in_page += nrows_to_read; // 当前page的当前行后移nrows_to_read位
+            dst->advance(nrows_to_read);            // column block的数据指针后移nrows_to_read位
+            _current_ordinal += nrows_to_read;      // 当前列的当前行后移nrows_to_read位
         }
-        remaining -= nrows_in_page;
+        remaining -= nrows_in_page; // 读完一个page的数据之后，更新变量remaining
     }
-    *n -= remaining;
+    *n -= remaining; // 更新本次从当前列真实读取的行数。有可能读完当前列中最后一个page数据，所读取的行数还不足参数传入的 *n
     // TODO(hkp): for string type, the bytes_read should be passed to page decoder
     // bytes_read = data size + null bitmap size
     _opts.stats->bytes_read += *n * dst->type_info()->size() + BitmapSize(*n);
     return Status::OK();
 }
 
+/*加载下一个page*/
 Status FileColumnIterator::_load_next_page(bool* eos) {
-    _page_iter.next();
-    if (!_page_iter.valid()) {
+    _page_iter.next(); // _page_iter指向下一个page
+    if (!_page_iter.valid()) { // 判断当前列是否存在下一个page
         *eos = true;
         return Status::OK();
     }
 
-    RETURN_IF_ERROR(_read_data_page(_page_iter));
-    _seek_to_pos_in_page(_page.get(), 0);
+    RETURN_IF_ERROR(_read_data_page(_page_iter)); // 读取当前列中_page_iter指向的page，并使用读取的page数据更新成员变量_page
+    _seek_to_pos_in_page(_page.get(), 0); // 寻找当前page的第一行数据
     *eos = false;
     return Status::OK();
 }
 
+/*读取当前列中iter指向的page，保存在成员变量_page中*/
 Status FileColumnIterator::_read_data_page(const OrdinalPageIndexIterator& iter) {
     PageHandle handle;
     Slice page_body;
     PageFooterPB footer;
-    RETURN_IF_ERROR(_reader->read_page(_opts, iter.page(), &handle, &page_body, &footer));
+    RETURN_IF_ERROR(_reader->read_page(_opts, iter.page(), &handle, &page_body, &footer)); // 通过column reader读取并解压一个page的数据
     // parse data page
     RETURN_IF_ERROR(ParsedPage::create(
             std::move(handle), page_body, footer.data_page_footer(), _reader->encoding_info(),
-            iter.page(), iter.page_index(), &_page));
+            iter.page(), iter.page_index(), &_page));                                      // 解析读取的page数据，通过参数_page传回
 
     // dictionary page is read when the first data page that uses it is read,
     // this is to optimize the memory usage: when there is no query on one column, we could
     // release the memory of dictionary page.
     // note that concurrent iterators for the same column won't repeatedly read dictionary page
     // because of page cache.
-    if (_reader->encoding_info()->encoding() == DICT_ENCODING) {
+    // 第一次读取当前列的page时，会读一次字典page。
+    if (_reader->encoding_info()->encoding() == DICT_ENCODING) { // 判断当前列是否是字典编码
         auto dict_page_decoder = reinterpret_cast<BinaryDictPageDecoder*>(_page->data_decoder);
-        if (dict_page_decoder->is_dict_encoding()) {
+        if (dict_page_decoder->is_dict_encoding()) { // 判断当前page的的data decoder是否是字典编码
             if (_dict_decoder == nullptr) {
                 // read dictionary page
                 Slice dict_data;
                 PageFooterPB dict_footer;
                 RETURN_IF_ERROR(_reader->read_page(
-                        _opts, _reader->get_dict_page_pointer(),
-                        &_dict_page_handle, &dict_data, &dict_footer));
+                        _opts, _reader->get_dict_page_pointer(), // 通过column reader获取字典page的指针
+                        &_dict_page_handle, &dict_data, &dict_footer)); // 通过column reader读取字典page
                 // ignore dict_footer.dict_page_footer().encoding() due to only
                 // PLAIN_ENCODING is supported for dict page right now
-                _dict_decoder.reset(new BinaryPlainPageDecoder(dict_data));
-                RETURN_IF_ERROR(_dict_decoder->init());
+                _dict_decoder.reset(new BinaryPlainPageDecoder(dict_data)); // 创建字典page的decoder，并初始化成员变量_dict_decoder
+                RETURN_IF_ERROR(_dict_decoder->init()); // 初始化字典page的decoder
             }
             dict_page_decoder->set_dict_decoder(_dict_decoder.get());
         }
@@ -485,45 +493,49 @@ Status FileColumnIterator::_read_data_page(const OrdinalPageIndexIterator& iter)
     return Status::OK();
 }
 
+/*根据zone map获取row范围*/
 Status FileColumnIterator::get_row_ranges_by_zone_map(CondColumn* cond_column,
                                                       CondColumn* delete_condition,
                                                       RowRanges* row_ranges) {
-    if (_reader->has_zone_map()) {
+    if (_reader->has_zone_map()) { // 根据column reader判断当前列是否存在zone map索引
         RETURN_IF_ERROR(_reader->get_row_ranges_by_zone_map(cond_column, delete_condition,
-                &_delete_partial_statisfied_pages, row_ranges));
+                &_delete_partial_statisfied_pages, row_ranges)); // 根据zone map获取row范围
     }
     return Status::OK();
 }
 
+/*根据bloom filter获取row范围*/
 Status FileColumnIterator::get_row_ranges_by_bloom_filter(CondColumn* cond_column, RowRanges* row_ranges) {
     if (cond_column != nullptr &&
-            cond_column->can_do_bloom_filter() && _reader->has_bloom_filter_index()) {
-        RETURN_IF_ERROR(_reader->get_row_ranges_by_bloom_filter(cond_column, row_ranges));
+            cond_column->can_do_bloom_filter() && _reader->has_bloom_filter_index()) { // 判断是否存在condition可以使用bloom filter（只有运算符为=、in或is时，可以使用bloom filter），并且根据column reader判断当前列是否存在bloom filter索引
+        RETURN_IF_ERROR(_reader->get_row_ranges_by_bloom_filter(cond_column, row_ranges)); // 根据bloom filter获取row范围
     }
     return Status::OK();
 }
 
+/*初始化DefaultValueColumnIterator*/
 Status DefaultValueColumnIterator::init(const ColumnIteratorOptions& opts) {
     _opts = opts;
     // be consistent with segment v1
     // if _has_default_value, we should create default column iterator for this column, and
     // "NULL" is a special default value which means the default value is null.
-    if (_has_default_value) {
+    if (_has_default_value) { // 判断当前列是否有默认值
         if (_default_value == "NULL") {
             DCHECK(_is_nullable);
-            _is_default_value_null = true;
+            _is_default_value_null = true; // 设置默认值为null的标志
         } else {
-            TypeInfo* type_info = get_type_info(_type);
-            _type_size = type_info->size();
-            _mem_value = reinterpret_cast<void*>(_pool->allocate(_type_size));
+            // 如果默认值不为null，则根据成员变量_default_value以及当前列的数据类型为当前列设置默认值
+            TypeInfo* type_info = get_type_info(_type); // 根据当前列的数据类型(_type)获取该数据类型的相关信息
+            _type_size = type_info->size(); // 获取当前列的数据类型的长度
+            _mem_value = reinterpret_cast<void*>(_pool->allocate(_type_size)); // 根据当前列的数据类型的长度分配内存空间，用于保存默认值
             OLAPStatus s = OLAP_SUCCESS;
             if (_type == OLAP_FIELD_TYPE_CHAR) {
-                int32_t length = _schema_length;
-                char* string_buffer = reinterpret_cast<char*>(_pool->allocate(length));
+                int32_t length = _schema_length; // 获取当前列的数据类型长度
+                char* string_buffer = reinterpret_cast<char*>(_pool->allocate(length)); // 根据当前列的数据类型的长度分配内存空间
                 memset(string_buffer, 0, length);
-                memory_copy(string_buffer, _default_value.c_str(), _default_value.length());
-                ((Slice*)_mem_value)->size = length;
-                ((Slice*)_mem_value)->data = string_buffer;
+                memory_copy(string_buffer, _default_value.c_str(), _default_value.length()); // 将默认值copy到变量string_buffer所在的内存空间
+                ((Slice*)_mem_value)->size = length;        // 更新成员变量_mem_value的size域，用于保存当前列数据默认值的数据长度
+                ((Slice*)_mem_value)->data = string_buffer; // 使用变量string_buffer更新成员变量_mem_value的data域，用于保存当前列数据默认值
             } else if ( _type == OLAP_FIELD_TYPE_VARCHAR ||
                 _type == OLAP_FIELD_TYPE_HLL ||
                 _type == OLAP_FIELD_TYPE_OBJECT ) {
@@ -542,24 +554,26 @@ Status DefaultValueColumnIterator::init(const ColumnIteratorOptions& opts) {
         }
     } else if (_is_nullable) {
         // if _has_default_value is false but _is_nullable is true, we should return null as default value.
+        // 如果当前列数据没有默认值，但是可以为null，则将null作为默认值
         _is_default_value_null = true;
-    } else {
+    } else { // 当前列没有默认值
         return Status::InternalError("invalid default value column for no default value and not nullable");
     }
     return Status::OK();
 }
 
+/*读取当前列的多行(batch)数据到segment iterator的block（column block）中*/
 Status DefaultValueColumnIterator::next_batch(size_t* n, ColumnBlockView* dst) {
     if (dst->is_nullable()) {
-        dst->set_null_bits(*n, _is_default_value_null);
+        dst->set_null_bits(*n, _is_default_value_null); // 将column block中的*n行数据设置为null
     }
 
     if (_is_default_value_null) {
-        dst->advance(*n);
+        dst->advance(*n); // 如果默认值为null，column block的数据指针后移*n位（前一步已经将column block中的*n行数据设置为null）
     } else {
-        for (int i = 0; i < *n; ++i) {
-            memcpy(dst->data(), _mem_value, _type_size);
-            dst->advance(1);
+        for (int i = 0; i < *n; ++i) { // 如果默认值不为null
+            memcpy(dst->data(), _mem_value, _type_size); // 将当前列的默认值copy到column block中
+            dst->advance(1); // column block的数据指针后移1位
         }
     }
     return Status::OK();

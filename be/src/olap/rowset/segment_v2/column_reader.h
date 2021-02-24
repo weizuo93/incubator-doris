@@ -287,7 +287,7 @@ private:
     // 2. We define an operation is one seek and following read,
     //    If new seek is issued, the _page will be reset.
     // 3. When _page is null, it means that this reader can not be read.
-    std::unique_ptr<ParsedPage> _page;
+    std::unique_ptr<ParsedPage> _page; // 保存当前正在访问的解析后的page数据
 
     // keep dict page decoder
     std::unique_ptr<PageDecoder> _dict_decoder;
@@ -297,7 +297,7 @@ private:
 
     // page iterator used to get next page when current page is finished.
     // This value will be reset when a new seek is issued
-    OrdinalPageIndexIterator _page_iter;
+    OrdinalPageIndexIterator _page_iter; // 用来记录当前正在访问的page的位置
 
     // current value ordinal
     ordinal_t _current_ordinal = 0;
