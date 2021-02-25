@@ -44,7 +44,7 @@ OLAPStatus BetaRowsetReader::init(RowsetReaderContext* read_context) {
         _stats = _context->stats;
     }
     // SegmentIterator will load seek columns on demand
-    Schema schema(_context->tablet_schema->columns(), *(_context->return_columns));
+    Schema schema(_context->tablet_schema->columns(), *(_context->return_columns)); // 创建schema，用于记录需要从segment文件中读取的字段（不需要从segment文件中读取所有的字段，只读取需要的字段数据就可以）
 
     // convert RowsetReaderContext to StorageReadOptions
     // 创建并初始化read options
