@@ -140,59 +140,69 @@ COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(LessEqualPredicate, <=)
 COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(GreaterPredicate, >)
 COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(GreaterEqualPredicate, >=)
 
+/*根据bitmap字典中的值等于_value的元素的bitmap编码获取需要读取的row范围，通过参数roaring传回*/
 #define BITMAP_COMPARE_EqualPredicate(s, exact_match, seeked_ordinal, iterator, bitmap, roaring) do { \
-    if (!s.is_not_found()) /*判断是否在字典中找到了大于或等于某一个value的值*/{ \
+    if (!s.is_not_found()) { /*在bitmap的字典中找到了第一个大于或等于_value的值（字典中的值从小到大排列）*/ \
         if (!s.ok()) { return s; } \
-        if (exact_match) /*判断是否在字典中完全匹配到了需要查找的value的值*/{ \
-            RETURN_IF_ERROR(iterator->read_bitmap(seeked_ordinal, &roaring)); \
+        if (exact_match) { /*在字典中找到的值正好等于value*/ \
+            RETURN_IF_ERROR(iterator->read_bitmap(seeked_ordinal, &roaring)); /*读取bitmap字典中位置为seeked_ordinal的元素的bitmap编码*/ \
         } \
     } \
     } while (0)
 
+/*根据bitmap字典中的值不等于_value的元素的bitmap编码获取需要读取的row范围，通过参数roaring传回*/
 #define BITMAP_COMPARE_NotEqualPredicate(s, exact_match, seeked_ordinal, iterator, bitmap, roaring) do { \
-    if (s.is_not_found()) { return Status::OK(); } \
+    if (s.is_not_found()) { return Status::OK(); } /*在bitmap的字典中没有找个任何一个大于或等于_value的值（字典中的值从小到大排列），即字典中的元素都小于_value，则直接返回，该条件没有过滤任何row*/ \
     if (!s.ok()) { return s; } \
-    if (!exact_match) { return Status::OK(); } \
-    RETURN_IF_ERROR(iterator->read_bitmap(seeked_ordinal, &roaring)); \
-    *bitmap -= roaring; \
-    return Status::OK(); \
+    if (!exact_match) { return Status::OK(); } /*在字典中找到的值大于_value，即字典中不存在和_value相同的元素，则直接返回，该条件没有过滤任何row*/ \
+    RETURN_IF_ERROR(iterator->read_bitmap(seeked_ordinal, &roaring)); /*读取bitmap字典中位置为seeked_ordinal的元素的bitmap编码*/ \
+    *bitmap -= roaring; /*从bitmap中去除当前列中值为value的行*/\
+    return Status::OK(); /*完成了bitmap的更新，直接返回*/ \
     } while (0)
 
+/*根据bitmap字典中的值小于_value的元素的bitmap编码获取需要读取的row范围，通过参数roaring传回*/
 #define BITMAP_COMPARE_LessPredicate(s, exact_match, seeked_ordinal, iterator, bitmap, roaring) do { \
-    if (s.is_not_found()) { return Status::OK(); } \
+    if (s.is_not_found()) { return Status::OK(); } /*在bitmap的字典中没有找个任何一个大于或等于_value的值（字典中的值从小到大排列），即字典中的元素都小于_value，则直接返回，该条件没有过滤任何row*/ \
     if (!s.ok()) { return s; } \
-    RETURN_IF_ERROR(iterator->read_union_bitmap(0, seeked_ordinal, &roaring)); \
+    RETURN_IF_ERROR(iterator->read_union_bitmap(0, seeked_ordinal, &roaring)); /*读取bitmap字典中位置从0到seeked_ordinal中所有元素的bitmap编码，并求并集*/ \
     } while (0)
 
+/*根据bitmap字典中的值小于或等于_value的元素的bitmap编码获取需要读取的row范围，通过参数roaring传回*/
 #define BITMAP_COMPARE_LessEqualPredicate(s, exact_match, seeked_ordinal, iterator, bitmap, roaring) do { \
-    if (s.is_not_found()) { return Status::OK(); } \
+    if (s.is_not_found()) { return Status::OK(); } /*在bitmap的字典中没有找个任何一个大于或等于_value的值（字典中的值从小到大排列），即字典中的元素都小于_value，则直接返回，该条件没有过滤任何row*/ \
     if (!s.ok()) { return s; } \
-    if (exact_match) { \
-        seeked_ordinal++; \
+    if (exact_match) { /*在字典中找到的值正好等于value*/ \
+        seeked_ordinal++; /*seeked_ordinal后移一位*/ \
     } \
-    RETURN_IF_ERROR(iterator->read_union_bitmap(0, seeked_ordinal, &roaring)); \
+    RETURN_IF_ERROR(iterator->read_union_bitmap(0, seeked_ordinal, &roaring)); /*读取bitmap字典中位置从0到seeked_ordinal中所有元素的bitmap编码，并求并集*/ \
     } while (0)
 
+/*根据bitmap字典中的值大于_value的元素的bitmap编码获取需要读取的row范围，通过参数roaring传回*/
 #define BITMAP_COMPARE_GreaterPredicate(s, exact_match, seeked_ordinal, iterator, bitmap, roaring) do { \
-    if (!s.is_not_found()) { \
+    if (!s.is_not_found()) { /*在bitmap的字典中找到了第一个大于或等于_value的值（字典中的值从小到大排列）*/ \
         if (!s.ok()) { return s; } \
-        if (exact_match) { \
-            seeked_ordinal++; \
+        if (exact_match) { /*在字典中找到的值正好等于value*/ \
+            seeked_ordinal++; /*seeked_ordinal后移一位*/ \
         } \
-        RETURN_IF_ERROR(iterator->read_union_bitmap(seeked_ordinal, ordinal_limit, &roaring)); \
+        RETURN_IF_ERROR(iterator->read_union_bitmap(seeked_ordinal, ordinal_limit, &roaring)); /*读取bitmap字典中位置从seeked_ordinal到ordinal_limit中所有元素的bitmap编码，并求并集*/ \
     } \
     } while (0)
 
+/*根据bitmap字典中的值大于或等于_value的元素的bitmap编码获取需要读取的row范围，通过参数roaring传回*/
 #define BITMAP_COMPARE_GreaterEqualPredicate(s, exact_match, seeked_ordinal, iterator, bitmap, roaring) do { \
-    if (!s.is_not_found()) { \
+    if (!s.is_not_found()) { /*在bitmap的字典中找到了第一个大于或等于_value的值（字典中的值从小到大排列）*/\
         if (!s.ok()) { return s; } \
-        RETURN_IF_ERROR(iterator->read_union_bitmap(seeked_ordinal, ordinal_limit, &roaring)); \
+        RETURN_IF_ERROR(iterator->read_union_bitmap(seeked_ordinal, ordinal_limit, &roaring)); /*读取bitmap字典中位置从seeked_ordinal到ordinal_limit中所有元素的bitmap编码，并求并集*/ \
     } \
     } while (0)
 
+/*根据bitmap字典的查找结果以及不同谓词类型的bitmap编码获取需要读取的row范围，通过参数roaring传回*/
 #define BITMAP_COMPARE(CLASS, s, exact_match, seeked_ordinal, iterator, bitmap, roaring) \
         BITMAP_COMPARE_##CLASS(s, exact_match, seeked_ordinal, iterator, bitmap, roaring)
 
+/*使用bitmap index对当前列需要读取的row进行过滤*/
+// CLASS表示不同的谓词类型（EqualPredicate、NotEqualPredicate、LessPredicate、LessEqualPredicate、GreaterPredicate和GreaterEqualPredicate）
+// OP与谓词类型相对应的运算符（==、!=、<、<=、>、>=）
 #define COMPARISON_PRED_BITMAP_EVALUATE(CLASS, OP) \
     template<class type> \
     Status CLASS<type>::evaluate(const Schema& schema, const vector<BitmapIndexIterator*>& iterators, uint32_t num_rows, Roaring* bitmap) const { \
@@ -209,10 +219,10 @@ COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(GreaterEqualPredicate, >=)
         } \
         Roaring roaring; \
         bool exact_match; \
-        Status s = iterator->seek_dictionary(&_value, &exact_match); /*在bitmap的字典中查找第一个大于或等于参数传入的_value的值（字典中的值从小到大排列），是否找到了和_value完全匹配的值的标志通过参数exact_match传回*/\
+        Status s = iterator->seek_dictionary(&_value, &exact_match); /*在bitmap的字典中查找第一个大于或等于_value的值（字典中的值从小到大排列），找到的值等于_value的时，exact_match为true；找到的值大于_value的时，exact_match为false。*/\
         rowid_t seeked_ordinal = iterator->current_ordinal(); /*获取_value在字典中的位置*/\
-        BITMAP_COMPARE(CLASS, s, exact_match, seeked_ordinal, iterator, bitmap, roaring); \
-        *bitmap &= roaring; \
+        BITMAP_COMPARE(CLASS, s, exact_match, seeked_ordinal, iterator, bitmap, roaring); /*根据bitmap字典的查找结果以及各元素的bitmap编码获取需要读取的row范围，通过参数roaring传回*/ \
+        *bitmap &= roaring; /*使用bitmap进行行过滤之后的row范围更新bitmap*/\
         return Status::OK(); \
     } \
 

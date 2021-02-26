@@ -39,7 +39,7 @@ class VectorizedRowBatch;
         type _value; \
     }; \
 
-COMPARISON_PRED_CLASS_DEFINE(EqualPredicate)        // =
+COMPARISON_PRED_CLASS_DEFINE(EqualPredicate)        // ==
 COMPARISON_PRED_CLASS_DEFINE(NotEqualPredicate)     // !=
 COMPARISON_PRED_CLASS_DEFINE(LessPredicate)         // <
 COMPARISON_PRED_CLASS_DEFINE(LessEqualPredicate)    // <=
