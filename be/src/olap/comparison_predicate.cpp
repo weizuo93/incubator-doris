@@ -200,7 +200,7 @@ COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(GreaterEqualPredicate, >=)
 #define BITMAP_COMPARE(CLASS, s, exact_match, seeked_ordinal, iterator, bitmap, roaring) \
         BITMAP_COMPARE_##CLASS(s, exact_match, seeked_ordinal, iterator, bitmap, roaring)
 
-/*使用bitmap index对当前列需要读取的row进行过滤*/
+/*使用bitmap index对当前列需要读取的row进行过滤,过滤之后需要读取的行通过参数bitmap传回*/
 // CLASS表示不同的谓词类型（EqualPredicate、NotEqualPredicate、LessPredicate、LessEqualPredicate、GreaterPredicate和GreaterEqualPredicate）
 // OP与谓词类型相对应的运算符（==、!=、<、<=、>、>=）
 #define COMPARISON_PRED_BITMAP_EVALUATE(CLASS, OP) \
