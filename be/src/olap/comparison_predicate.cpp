@@ -141,9 +141,9 @@ COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(GreaterPredicate, >)
 COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(GreaterEqualPredicate, >=)
 
 #define BITMAP_COMPARE_EqualPredicate(s, exact_match, seeked_ordinal, iterator, bitmap, roaring) do { \
-    if (!s.is_not_found()) { \
+    if (!s.is_not_found()) /*判断是否在字典中找到了大于或等于某一个value的值*/{ \
         if (!s.ok()) { return s; } \
-        if (exact_match) { \
+        if (exact_match) /*判断是否在字典中完全匹配到了需要查找的value的值*/{ \
             RETURN_IF_ERROR(iterator->read_bitmap(seeked_ordinal, &roaring)); \
         } \
     } \
@@ -196,21 +196,21 @@ COMPARISON_PRED_COLUMN_BLOCK_EVALUATE(GreaterEqualPredicate, >=)
 #define COMPARISON_PRED_BITMAP_EVALUATE(CLASS, OP) \
     template<class type> \
     Status CLASS<type>::evaluate(const Schema& schema, const vector<BitmapIndexIterator*>& iterators, uint32_t num_rows, Roaring* bitmap) const { \
-        BitmapIndexIterator* iterator = iterators[_column_id]; \
-        if (iterator == nullptr) { \
+        BitmapIndexIterator* iterator = iterators[_column_id]; /*获取当前列的BitmapIndexIterator对象*/ \
+        if (iterator == nullptr) { /*判断当前列是否存在bitmap索引*/\
             return Status::OK(); \
         } \
-        rowid_t ordinal_limit = iterator->bitmap_nums(); \
-        if (iterator->has_null_bitmap()) { \
+        rowid_t ordinal_limit = iterator->bitmap_nums(); /*获取当前列bitmap的行数*/\
+        if (iterator->has_null_bitmap()) { /*判断当前列是否有null值*/\
             ordinal_limit--; \
             Roaring null_bitmap; \
-            RETURN_IF_ERROR(iterator->read_null_bitmap(&null_bitmap)); \
-            *bitmap -= null_bitmap; \
+            RETURN_IF_ERROR(iterator->read_null_bitmap(&null_bitmap)); /*获取当前列中null值的bitmap编码*/ \
+            *bitmap -= null_bitmap; /*从参数传入的需要读取的行范围中去除null值所在的行*/\
         } \
         Roaring roaring; \
         bool exact_match; \
-        Status s = iterator->seek_dictionary(&_value, &exact_match); \
-        rowid_t seeked_ordinal = iterator->current_ordinal(); \
+        Status s = iterator->seek_dictionary(&_value, &exact_match); /*在bitmap的字典中查找第一个大于或等于参数传入的_value的值（字典中的值从小到大排列），是否找到了和_value完全匹配的值的标志通过参数exact_match传回*/\
+        rowid_t seeked_ordinal = iterator->current_ordinal(); /*获取_value在字典中的位置*/\
         BITMAP_COMPARE(CLASS, s, exact_match, seeked_ordinal, iterator, bitmap, roaring); \
         *bitmap &= roaring; \
         return Status::OK(); \

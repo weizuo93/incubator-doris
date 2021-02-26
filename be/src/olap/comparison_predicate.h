@@ -27,23 +27,24 @@ class VectorizedRowBatch;
 
 #define COMPARISON_PRED_CLASS_DEFINE(CLASS) \
     template <class type> \
-    class CLASS : public ColumnPredicate { \
+    class CLASS : public ColumnPredicate { /*继承ColumnPredicate类*/\
     public: \
         CLASS(uint32_t column_id, const type& value); \
         virtual ~CLASS() { }  \
         virtual void evaluate(VectorizedRowBatch* batch) const override; \
         void evaluate(ColumnBlock* block, uint16_t* sel, uint16_t* size) const override; \
+        /*使用bitmap index对当前列需要读取的row进行过滤*/                                    \
         virtual Status evaluate(const Schema& schema, const std::vector<BitmapIndexIterator*>& iterators, uint32_t num_rows, Roaring* roaring) const override; \
     private: \
         type _value; \
     }; \
 
-COMPARISON_PRED_CLASS_DEFINE(EqualPredicate)
-COMPARISON_PRED_CLASS_DEFINE(NotEqualPredicate)
-COMPARISON_PRED_CLASS_DEFINE(LessPredicate)
-COMPARISON_PRED_CLASS_DEFINE(LessEqualPredicate)
-COMPARISON_PRED_CLASS_DEFINE(GreaterPredicate)
-COMPARISON_PRED_CLASS_DEFINE(GreaterEqualPredicate)
+COMPARISON_PRED_CLASS_DEFINE(EqualPredicate)        // =
+COMPARISON_PRED_CLASS_DEFINE(NotEqualPredicate)     // !=
+COMPARISON_PRED_CLASS_DEFINE(LessPredicate)         // <
+COMPARISON_PRED_CLASS_DEFINE(LessEqualPredicate)    // <=
+COMPARISON_PRED_CLASS_DEFINE(GreaterPredicate)      // >
+COMPARISON_PRED_CLASS_DEFINE(GreaterEqualPredicate) // >=
 
 } //namespace doris
 

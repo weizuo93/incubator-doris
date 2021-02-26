@@ -140,7 +140,7 @@ Status SegmentIterator::_init() {
     RETURN_IF_ERROR(_get_row_ranges_by_keys()); // 根据short key（前缀索引列）的范围获取row id的范围
     RETURN_IF_ERROR(_get_row_ranges_by_column_conditions()); // 根据各个column condition的范围获取row id的范围（依次使用bitmap索引、bloom filter索引、zone map索引和delete condition对segment的数据行进行过滤）
     _init_lazy_materialization(); // 初始化lazy materialization（延迟物化）
-    _range_iter.reset(new BitmapRangeIterator(_row_bitmap)); // 创建BitmapRangeIterator对象，并初始化成员变量_range_iter
+    _range_iter.reset(new BitmapRangeIterator(_row_bitmap)); // 根据成员变量_row_bitmap创建BitmapRangeIterator对象，并初始化成员变量_range_iter（可以通过成员变量_range_iter来迭代读取成员变量_row_bitmap中每一个连续的row范围）
     return Status::OK();
 }
 
@@ -260,7 +260,7 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
         RowRanges::ranges_intersection(bf_row_ranges, column_bf_row_ranges, &bf_row_ranges); // 将当前列bloom filter索引计算的row范围与其他列bloom filter索引计算的row范围求交集
     }
     size_t pre_size = condition_row_ranges->count();
-    RowRanges::ranges_intersection(*condition_row_ranges, bf_row_ranges, condition_row_ranges); // 将bloom filter索引计算的row范围与其他condition计算的row范围求交集
+    RowRanges::ranges_intersection(*condition_row_ranges, bf_row_ranges, condition_row_ranges); // 将bloom filter索引计算的row范围与其他condition计算的row范围求交集，结果保存在condition_row_ranges中
     _opts.stats->rows_bf_filtered += (pre_size - condition_row_ranges->count());
 
     RowRanges zone_map_row_ranges = RowRanges::create_single(num_rows()); // 初始化zone_map_row_ranges为segment中所有的数据行
@@ -279,7 +279,7 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
                         nullptr,
                         &column_row_ranges));
         // intersect different columns's row ranges to get final row ranges by zone map
-        RowRanges::ranges_intersection(zone_map_row_ranges, column_row_ranges, &zone_map_row_ranges);// 将当前列zone map索引计算的row范围与其他列zone map索引计算的row范围求交集
+        RowRanges::ranges_intersection(zone_map_row_ranges, column_row_ranges, &zone_map_row_ranges);// 将当前列zone map索引计算的row范围与其他列zone map索引计算的row范围求交集，结果保存在zone_map_row_ranges中
     }
 
     // final filter data with delete conditions
@@ -503,8 +503,8 @@ Status SegmentIterator::_read_columns(const std::vector<ColumnId>& column_ids,
 /*从segment中获取一个block*/
 Status SegmentIterator::next_batch(RowBlockV2* block) {
     SCOPED_RAW_TIMER(&_opts.stats->block_load_ns);
-    if (UNLIKELY(!_inited)) { // 判断SegmentIterator是否已经被初始化
-        RETURN_IF_ERROR(_init()); // 会在第一次执行next_batch()函数时初始化SegmentIterator
+    if (UNLIKELY(!_inited)) { // 判断SegmentIterator是否已经被初始化，会在第一次执行next_batch()函数时初始化SegmentIterator
+        RETURN_IF_ERROR(_init()); // 初始化SegmentIterator，依次使用short key索引、bitmap索引、bloom filter索引、zone map索引和delete condition对segment的数据行进行过滤
         if (_lazy_materialization_read) { // 判断是否需要延迟物化
             _block_rowids.reserve(block->capacity());
         }
@@ -518,11 +518,11 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
 
     // phase 1: read rows selected by various index (indicated by _row_bitmap) into block
     // when using lazy-materialization-read, only columns with predicates are read
-    // 读取数据行到block中，读取的数据行依赖于bitmap
+    // 读取数据行到block中，需要读取的数据行的id保存在成员变量_row_bitmap中
     do {
         uint32_t range_from;
         uint32_t range_to;
-        bool has_next_range = _range_iter->next_range(nrows_read_limit - nrows_read, &range_from, &range_to); // 获取下一个连续的bitmap范围
+        bool has_next_range = _range_iter->next_range(nrows_read_limit - nrows_read, &range_from, &range_to); // 获取下一个连续的bitmap范围，可以通过成员变量_range_iter来迭代读取成员变量_row_bitmap中每一个连续的row范围
         if (!has_next_range) {
             break; //如果没有获取到bitmap范围，则循环结束
         }

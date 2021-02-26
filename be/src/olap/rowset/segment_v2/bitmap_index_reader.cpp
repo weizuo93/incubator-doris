@@ -39,9 +39,10 @@ Status BitmapIndexReader::new_iterator(BitmapIndexIterator** iterator) {
     return Status::OK();
 }
 
+/*在bitmap的字典中查找第一个大于或等于参数传入的value的值（字典中的值从小到大排列），是否找到了和value完全匹配的值的标志通过参数exact_match传回*/
 Status BitmapIndexIterator::seek_dictionary(const void* value, bool* exact_match) {
     RETURN_IF_ERROR(_dict_column_iter.seek_at_or_after(value, exact_match));
-    _current_rowid = _dict_column_iter.get_current_ordinal();
+    _current_rowid = _dict_column_iter.get_current_ordinal(); // 如果在字典中完全匹配到value，则更新成员变量_current_rowid的值为参数传入的value在字典中的位置；如果value不存在，则更新成员变量_current_rowid的值为字典中第一个大于value的值的位置
     return Status::OK();
 }
 
