@@ -175,8 +175,8 @@ public class ConnectScheduler {
                 }
 
                 context.setStartTime();
-                ConnectProcessor processor = new ConnectProcessor(context);
-                processor.loop();
+                ConnectProcessor processor = new ConnectProcessor(context); // 创建ConnectProcessor对象
+                processor.loop(); // 处理mysql的连接请求
             } catch (Exception e) {
                 // for unauthrorized access such lvs probe request, may cause exception, just log it in debug level
                 if (context.getCurrentUserIdentity() != null) {

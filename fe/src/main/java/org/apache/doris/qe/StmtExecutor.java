@@ -288,8 +288,8 @@ public class StmtExecutor {
                 }
             } else if (parsedStmt instanceof DdlStmt) {
                 handleDdlStmt();
-            } else if (parsedStmt instanceof ShowStmt) {
-                handleShow();
+            } else if (parsedStmt instanceof ShowStmt) { // 当前sql是show语句
+                handleShow(); // 处理当前的show语句
             } else if (parsedStmt instanceof KillStmt) {
                 handleKill();
             } else if (parsedStmt instanceof ExportStmt) {
@@ -851,13 +851,14 @@ public class StmtExecutor {
         context.getMysqlChannel().sendOnePacket(serializer.toByteBuffer());
     }
 
+    /*将show语句的执行结果发送给客户端*/
     public void sendShowResult(ShowResultSet resultSet) throws IOException {
         context.updateReturnRows(resultSet.getResultRows().size());
         // Send meta data.
-        sendMetaData(resultSet.getMetaData());
+        sendMetaData(resultSet.getMetaData()); // 发送元数据
 
         // Send result set.
-        for (List<String> row : resultSet.getResultRows()) {
+        for (List<String> row : resultSet.getResultRows()) { // 按行发送每一条结果
             serializer.reset();
             for (String item : row) {
                 if (item == null || item.equals(FeConstants.null_string)) {
@@ -866,15 +867,16 @@ public class StmtExecutor {
                     serializer.writeLenEncodedString(item);
                 }
             }
-            context.getMysqlChannel().sendOnePacket(serializer.toByteBuffer());
+            context.getMysqlChannel().sendOnePacket(serializer.toByteBuffer()); // 发送一行结果数据
         }
 
         context.getState().setEof();
     }
     // Process show statement
+    /*处理show语句*/
     private void handleShow() throws IOException, AnalysisException, DdlException {
-        ShowExecutor executor = new ShowExecutor(context, (ShowStmt) parsedStmt);
-        ShowResultSet resultSet = executor.execute();
+        ShowExecutor executor = new ShowExecutor(context, (ShowStmt) parsedStmt); // 创建ShowExecutor对象
+        ShowResultSet resultSet = executor.execute(); // 执行show语句，并获取结果
         if (resultSet == null) {
             // state changed in execute
             return;
@@ -884,7 +886,7 @@ public class StmtExecutor {
             return;
         }
 
-        sendShowResult(resultSet);
+        sendShowResult(resultSet); // 将show语句的执行结果发送给客户端
     }
 
     private void handleExplainStmt(String result) throws IOException {

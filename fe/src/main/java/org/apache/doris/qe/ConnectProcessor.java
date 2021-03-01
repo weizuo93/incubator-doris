@@ -501,7 +501,7 @@ public class ConnectProcessor {
         channel.setSequenceId(0);
         // read packet from channel
         try {
-            packetBuf = channel.fetchOnePacket(); //从MySQL中获取一个packet，其中包含一条MySQL请求（sql语句）
+            packetBuf = channel.fetchOnePacket(); //从MySQL channel中获取一个packet，其中包含一条SQL请求（sql语句）
             if (packetBuf == null) {
                 LOG.warn("Null packet received from network. remote: {}", channel.getRemoteHostPortString());
                 throw new IOException("Error happened when receiving packet.");
@@ -513,17 +513,18 @@ public class ConnectProcessor {
         }
 
         // dispatch
-        dispatch(); //处理接收到的MySQL请求
+        dispatch(); //处理接收到的SQL请求
         // finalize
         finalizeCommand(); //发送请求结束之后的响应包给MySQL客户端
 
         ctx.setCommand(MysqlCommand.COM_SLEEP);
     }
 
+    /*循环处理通过当前mysql连接发来的sql请求*/
     public void loop() {
-        while (!ctx.isKilled()) {
+        while (!ctx.isKilled()) { // 循环退出的条件是连接被断开
             try {
-                processOnce();
+                processOnce(); // 处理一个SQL请求(接收，处理，返回)
             } catch (Exception e) {
                 // TODO(zhaochun): something wrong
                 LOG.warn("Exception happened in one seesion(" + ctx + ").", e);

@@ -130,8 +130,8 @@ void StreamLoadAction::handle(HttpRequest* req) {
         }
     }
 
-    auto str = ctx->to_json();
-    HttpChannel::send_reply(req, str); // 发送stream load的执行结果给http客户端
+    auto str = ctx->to_json(); // 生成stream load的返回结果
+    HttpChannel::send_reply(req, str); // 执行stream load成功，发送stream load的执行结果给http客户端
 
     // update statstics
     streaming_load_requests_total.increment(1);
@@ -199,8 +199,8 @@ int StreamLoadAction::on_header(HttpRequest* req) {
         if (ctx->body_sink.get() != nullptr) {
             ctx->body_sink->cancel();
         }
-        auto str = ctx->to_json();
-        HttpChannel::send_reply(req, str);
+        auto str = ctx->to_json(); // 生成stream load的返回结果
+        HttpChannel::send_reply(req, str);  // 执行stream load失败，向客户端返回失败信息
         streaming_load_current_processing.increment(-1);
         return -1;
     }

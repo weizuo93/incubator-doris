@@ -19,6 +19,7 @@
 
 namespace doris {
 
+/*生成stream load的返回结果*/
 std::string StreamLoadContext::to_json() const {
     rapidjson::StringBuffer s;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(s);

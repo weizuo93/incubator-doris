@@ -243,6 +243,7 @@ public class DatabaseTransactionMgr {
         info.add(txnState.getErrMsg());
     }
 
+    /*开始transaction，返回transaction id*/
     public long beginTransaction(List<Long> tableIdList, String label, TUniqueId requestId,
                                  TransactionState.TxnCoordinator coordinator, TransactionState.LoadJobSourceType sourceType, long listenerId, long timeoutSecond)
             throws DuplicatedRequestException, LabelAlreadyUsedException, BeginTransactionException, AnalysisException {
@@ -285,7 +286,7 @@ public class DatabaseTransactionMgr {
 
             checkRunningTxnExceedLimit(sourceType);
 
-            long tid = idGenerator.getNextTransactionId();
+            long tid = idGenerator.getNextTransactionId(); // 创建transaction id
             LOG.info("begin transaction: txn id {} with label {} from coordinator {}", tid, label, coordinator);
             TransactionState transactionState = new TransactionState(dbId, tableIdList, tid, label, requestId, sourceType,
                     coordinator, listenerId, timeoutSecond * 1000);

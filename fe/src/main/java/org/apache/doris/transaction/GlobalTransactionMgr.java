@@ -110,6 +110,7 @@ public class GlobalTransactionMgr implements Writable {
      * @throws DuplicatedRequestException
      * @throws IllegalTransactionParameterException
      */
+    /*开始数据导入的transaction事务*/
     public long beginTransaction(long dbId, List<Long> tableIdList, String label, TUniqueId requestId,
                                  TxnCoordinator coordinator, LoadJobSourceType sourceType, long listenerId, long timeoutSecond)
             throws AnalysisException, LabelAlreadyUsedException, BeginTransactionException, DuplicatedRequestException {
@@ -127,7 +128,7 @@ public class GlobalTransactionMgr implements Writable {
         }
 
         DatabaseTransactionMgr dbTransactionMgr = getDatabaseTransactionMgr(dbId);
-        return dbTransactionMgr.beginTransaction(tableIdList, label, requestId, coordinator, sourceType, listenerId, timeoutSecond);
+        return dbTransactionMgr.beginTransaction(tableIdList, label, requestId, coordinator, sourceType, listenerId, timeoutSecond); // 通过DatabaseTransactionMgr开始transaction
     }
 
     private void checkValidTimeoutSecond(long timeoutSecond, int maxLoadTimeoutSecond, int minLoadTimeOutSecond) throws AnalysisException {

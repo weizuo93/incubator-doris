@@ -164,6 +164,7 @@ public class ShowExecutor {
         resultSet = null;
     }
 
+    /*执行show语句，并获取结果*/
     public ShowResultSet execute() throws AnalysisException {
         if (stmt instanceof ShowRollupStmt) {
             handleShowRollup();
@@ -196,7 +197,7 @@ public class ShowExecutor {
         } else if (stmt instanceof ShowColumnStmt) {
             handleShowColumn();
         } else if (stmt instanceof ShowLoadStmt) {
-            handleShowLoad();
+            handleShowLoad(); // 执行show load语句
         } else if (stmt instanceof ShowLoadWarningsStmt) {
             handleShowLoadWarnings();
         } else if (stmt instanceof ShowRoutineLoadStmt) {
@@ -256,7 +257,7 @@ public class ShowExecutor {
         } else if (stmt instanceof ShowIndexStmt) {
             handleShowIndex();
         } else if (stmt instanceof ShowTransactionStmt) {
-            handleShowTransaction();
+            handleShowTransaction(); // 执行show transaction语句
         } else if (stmt instanceof ShowPluginsStmt) {
             handleShowPlugins();
         } else {
@@ -755,11 +756,12 @@ public class ShowExecutor {
     }
 
     // Show load statement.
+    /*执行show load语句*/
     private void handleShowLoad() throws AnalysisException {
-        ShowLoadStmt showStmt = (ShowLoadStmt) stmt;
+        ShowLoadStmt showStmt = (ShowLoadStmt) stmt; // 获取show load语句
 
         Catalog catalog = Catalog.getCurrentCatalog();
-        Database db = catalog.getDb(showStmt.getDbName());
+        Database db = catalog.getDb(showStmt.getDbName()); // 获取show load语句中的databases
         if (db == null) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_BAD_DB_ERROR, showStmt.getDbName());
         }
@@ -767,16 +769,18 @@ public class ShowExecutor {
 
         // combine the List<LoadInfo> of load(v1) and loadManager(v2)
         Load load = catalog.getLoadInstance();
-        List<List<Comparable>> loadInfos = load.getLoadJobInfosByDb(dbId, db.getFullName(),
-                                                                    showStmt.getLabelValue(),
+        // 获取load v1的相关load job（load v1 会在后面的版本会被废弃）
+        List<List<Comparable>> loadInfos = load.getLoadJobInfosByDb(dbId, db.getFullName(),   // 获取load job的信息
+                                                                    showStmt.getLabelValue(), // load的label
                                                                     showStmt.isAccurateMatch(),
-                                                                    showStmt.getStates());
-        Set<String> statesValue = showStmt.getStates() == null ? null : showStmt.getStates().stream()
+                                                                    showStmt.getStates());    // load的状态(PENDING、ETL、LOADING、QUORUM_FINISHED、FINISHED、CANCELLED）
+        Set<String> statesValue = showStmt.getStates() == null ? null : showStmt.getStates().stream() // 获取需要查询的load任务的状态
                 .map(entity -> entity.name())
                 .collect(Collectors.toSet());
-        loadInfos.addAll(catalog.getLoadManager().getLoadJobInfosByDb(dbId, showStmt.getLabelValue(),
-                                                                      showStmt.isAccurateMatch(),
-                                                                      statesValue));
+        // 获取load v2的相关load job
+        loadInfos.addAll(catalog.getLoadManager().getLoadJobInfosByDb(dbId, showStmt.getLabelValue(), // load的label
+                                                                      showStmt.isAccurateMatch(),     // job的label与参数传入的label完全匹配还是模糊匹配
+                                                                      statesValue));                  // 查询的load任务的状态需要在Set<String>类型的参数statesValue中包含
 
         // order the result of List<LoadInfo> by orderByPairs in show stmt
         List<OrderByPair> orderByPairs = showStmt.getOrderByPairs();
@@ -788,37 +792,37 @@ public class ShowExecutor {
             // sort by id asc
             comparator = new ListComparator<List<Comparable>>(0);
         }
-        Collections.sort(loadInfos, comparator);
+        Collections.sort(loadInfos, comparator); // 对需要返回的所有load任务的信息进行排序
 
         List<List<String>> rows = Lists.newArrayList();
-        for (List<Comparable> loadInfo : loadInfos) {
+        for (List<Comparable> loadInfo : loadInfos) { // 依次遍历每一个load info
             List<String> oneInfo = new ArrayList<String>(loadInfo.size());
 
             // replace QUORUM_FINISHED -> FINISHED
-            if (loadInfo.get(LoadProcDir.STATE_INDEX).equals(JobState.QUORUM_FINISHED.name())) {
+            if (loadInfo.get(LoadProcDir.STATE_INDEX).equals(JobState.QUORUM_FINISHED.name())) { // 使用FINISHED状态替换QUORUM_FINISHED
                 loadInfo.set(LoadProcDir.STATE_INDEX, JobState.FINISHED.name());
             }
 
-            for (Comparable element : loadInfo) {
+            for (Comparable element : loadInfo) { // 依次遍历一个load info中的每一条详细信息
                 oneInfo.add(element.toString());
             }
-            rows.add(oneInfo);
+            rows.add(oneInfo); // 获取结果中的一行数据
         }
 
         // filter by limit
-        long limit = showStmt.getLimit();
-        long offset = showStmt.getOffset() == -1L ? 0 : showStmt.getOffset();
+        long limit = showStmt.getLimit(); // 获取show load sql语句中的limit
+        long offset = showStmt.getOffset() == -1L ? 0 : showStmt.getOffset(); // 获取show load sql语句中的offset
         if (offset >= rows.size()) {
             rows = Lists.newArrayList();
         } else if (limit != -1L) {
             if ((limit + offset) < rows.size()) {
-                rows = rows.subList((int) offset, (int) (limit + offset));
+                rows = rows.subList((int) offset, (int) (limit + offset)); // 从rows中取子集（从偏移量offset开始的limit条查询结果）
             } else {
                 rows = rows.subList((int) offset, rows.size());
             }
         }
 
-        resultSet = new ShowResultSet(showStmt.getMetaData(), rows);
+        resultSet = new ShowResultSet(showStmt.getMetaData(), rows); // 获取show load的执行结果
     }
 
     private void handleShowLoadWarnings() throws AnalysisException {
@@ -1541,6 +1545,7 @@ public class ShowExecutor {
     }
 
     // Show transaction statement.
+    /*执行show transaction语句*/
     private void handleShowTransaction() throws AnalysisException {
         ShowTransactionStmt showStmt = (ShowTransactionStmt) stmt;
         Database db = ctx.getCatalog().getDb(showStmt.getDbName());
@@ -1548,9 +1553,9 @@ public class ShowExecutor {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_BAD_DB_ERROR, showStmt.getDbName());
         }
 
-        long txnId = showStmt.getTxnId();
+        long txnId = showStmt.getTxnId(); // 从sql语句中获取 transaction id
         GlobalTransactionMgr transactionMgr = Catalog.getCurrentGlobalTransactionMgr();
-        resultSet = new ShowResultSet(showStmt.getMetaData(), transactionMgr.getSingleTranInfo(db.getId(), txnId));
+        resultSet = new ShowResultSet(showStmt.getMetaData(), transactionMgr.getSingleTranInfo(db.getId(), txnId)); // 通过GlobalTransactionMgr获取当前transaction的信息
     }
 
     private void handleShowPlugins() throws AnalysisException {
