@@ -158,7 +158,7 @@ Status StreamLoadAction::_handle(StreamLoadContext* ctx) {
     }
 
     // wait stream load finish
-    RETURN_IF_ERROR(ctx->future.get()); // 等待stream load结束
+    RETURN_IF_ERROR(ctx->future.get()); // 会被阻塞，直到stream load的fragment执行结束（ctx->promise.set_value(status)会唤醒当前线程）
 
     // If put file succeess we need commit this load
     int64_t commit_and_publish_start_time = MonotonicNanos();
@@ -172,7 +172,7 @@ Status StreamLoadAction::_handle(StreamLoadContext* ctx) {
 int StreamLoadAction::on_header(HttpRequest* req) {
     streaming_load_current_processing.increment(1);
 
-    StreamLoadContext* ctx = new StreamLoadContext(_exec_env);
+    StreamLoadContext* ctx = new StreamLoadContext(_exec_env); // 创建StreamLoadContext对象
     ctx->ref();
     req->set_handler_ctx(ctx);
 
@@ -183,7 +183,7 @@ int StreamLoadAction::on_header(HttpRequest* req) {
     ctx->table = req->param(HTTP_TABLE_KEY);
     ctx->label = req->header(HTTP_LABEL_KEY);
     if (ctx->label.empty()) {
-        ctx->label = generate_uuid_string();
+        ctx->label = generate_uuid_string(); // 随机生成一个label
     }
 
     LOG(INFO) << "new income streaming load request." << ctx->brief()
@@ -260,7 +260,7 @@ Status StreamLoadAction::_on_header(HttpRequest* http_req, StreamLoadContext* ct
     ctx->begin_txn_cost_nanos = MonotonicNanos() - begin_txn_start_time;
 
     // process put file
-    return _process_put(http_req, ctx); // 处理文件put
+    return _process_put(http_req, ctx); // 通过rpc向FE发送load put的请求,并执行FE下发的数据导入的fragment
 }
 
 void StreamLoadAction::on_chunk_data(HttpRequest* req) {
@@ -304,6 +304,7 @@ void StreamLoadAction::free_handler_ctx(void* param) {
     }
 }
 
+/*通过rpc向FE发送load put的请求,并执行FE下发的数据导入的fragment*/
 Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* ctx) {
     // Now we use stream
     ctx->use_streaming = is_format_support_streaming(ctx->format);
@@ -316,7 +317,7 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* 
     request.txnId = ctx->txn_id;               // 为rpc请求设置txn_id
     request.formatType = ctx->format;          // 为rpc请求设置格式
     request.__set_loadId(ctx->id.to_thrift()); // 为rpc请求设置RPC id
-    if (ctx->use_streaming) {
+    if (ctx->use_streaming) { // 注册 StreamLoadPipe
         auto pipe = std::make_shared<StreamLoadPipe>();
         RETURN_IF_ERROR(_exec_env->load_stream_mgr()->put(ctx->id, pipe));
         request.fileType = TFileType::FILE_STREAM;           // 为rpc请求设置文件类型为stream文件
@@ -400,7 +401,7 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* 
     }
 
     int64_t stream_load_put_start_time = MonotonicNanos();
-    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>(   // 通过rpc向FE发送load put的请求
+    RETURN_IF_ERROR(ThriftRpcHelper::rpc<FrontendServiceClient>(   // 通过rpc向FE请求执行计划,FE收到RPC请求后会生成数据导入的执行计划
             master_addr.hostname, master_addr.port,
             [&request, ctx] (FrontendServiceConnection& client) {
                 client->streamLoadPut(ctx->put_result, request);   // RPC的结果通过ctx->put_result返回

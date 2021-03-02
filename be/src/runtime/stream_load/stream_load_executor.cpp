@@ -104,7 +104,7 @@ Status StreamLoadExecutor::execute_plan_fragment(StreamLoadContext* ctx) {
                     }
                 }
                 ctx->write_data_cost_nanos = MonotonicNanos() - ctx->start_write_data_nanos;
-                ctx->promise.set_value(status);
+                ctx->promise.set_value(status); // 唤醒阻塞的handle()函数线程
 
                 if (ctx->unref()) {
                     delete ctx;
