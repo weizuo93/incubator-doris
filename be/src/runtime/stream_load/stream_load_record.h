@@ -17,26 +17,24 @@
 
 #pragma once
 
-#include "rocksdb/db.h"
-
 namespace doris {
 
-class OlapMeta {
+class Status;
+
+class StreamLoadRecord {
 public:
     StreamLoadRecord(const std::string& root_path);
 
     virtual ~StreamLoadRecord();
 
-    OLAPStatus init();
+    Status init();
 
-    OLAPStatus get(const int column_family_index, const std::string& key, std::string* value);
+    Status put(const int column_family_index, const std::string& key, const std::string& value);
 
-    OLAPStatus put(const int column_family_index, const std::string& key, const std::string& value);
+    Status get_batch(const int column_family_index, const std::string& start, const int batch_size);
 
-    OLAPStatus remove(const int column_family_index, const std::string& key);
+    Status remove(const int column_family_index, const std::string& key);
 
-    OLAPStatus iterate(const int column_family_index, const std::string& prefix,
-                       std::function<bool(const std::string&, const std::string&)> const& func);
 
 
 private:

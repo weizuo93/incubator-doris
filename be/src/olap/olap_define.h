@@ -377,6 +377,7 @@ enum ColumnFamilyIndex {
     DEFAULT_COLUMN_FAMILY_INDEX = 0,
     DORIS_COLUMN_FAMILY_INDEX,
     META_COLUMN_FAMILY_INDEX,
+    STREAM_LOAD_COLUMN_FAMILY_INDEX
 };
 
 static const char* const HINIS_KEY_SEPARATOR = ";";
@@ -386,6 +387,7 @@ static const char* const HINIS_KEY_GROUP_SEPARATOR = "&";
 static const std::string DEFAULT_COLUMN_FAMILY = "default";
 static const std::string DORIS_COLUMN_FAMILY = "doris";
 static const std::string META_COLUMN_FAMILY = "meta";
+static const std::string STREAM_LOAD_COLUMN_FAMILY = "stream_load";
 static const std::string END_ROWSET_ID = "end_rowset_id";
 static const std::string CONVERTED_FLAG = "true";
 static const std::string TABLET_CONVERT_FINISHED = "tablet_convert_finished";
