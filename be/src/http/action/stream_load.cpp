@@ -116,7 +116,7 @@ void StreamLoadAction::handle(HttpRequest* req) {
                          << ", errmsg=" << ctx->status.get_error_msg();
         }
     }
-    ctx->load_cost_nanos = MonotonicNanos() - ctx->start_nanos;
+    ctx->load_cost_micros = UnixMicros() - ctx->start_micros;
 
     if (!ctx->status.ok() && ctx->status.code() != TStatusCode::PUBLISH_TIMEOUT) {
         if (ctx->need_rollback) {
@@ -143,16 +143,16 @@ void StreamLoadAction::handle(HttpRequest* req) {
         }
 
         std::map<std::string, std::string> records;
-        st = stream_load_record->get_batch(1, ctx->label, 1, records);
+        st = stream_load_record->get_batch(1, "", 3, records);
         if (!st.ok()) {
             LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
         } else {
             LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
             std::map<std::string, std::string>::iterator it = records.begin();
-            ctx->parse_stream_load_audit(it->second);
-//            for (; it != records.end(); it++) {
-//                LOG(INFO) << "get_batch  stream_load_record rocksdb successfully. label: " << it->first << ", value: " << it->second;
-//            }
+//            ctx->parse_stream_load_audit(it->second);
+            for (; it != records.end(); it++) {
+                ctx->parse_stream_load_audit(it->second);
+            }
         }
     } else {
         LOG(WARNING) << "stream_load_record is null.";
@@ -160,7 +160,7 @@ void StreamLoadAction::handle(HttpRequest* req) {
 
     // update statstics
     streaming_load_requests_total->increment(1);
-    streaming_load_duration_ms->increment(ctx->load_cost_nanos / 1000000);
+    streaming_load_duration_ms->increment(ctx->load_cost_micros / 1000);
     streaming_load_bytes->increment(ctx->receive_bytes);
     streaming_load_current_processing->increment(-1);
 }
@@ -237,16 +237,16 @@ int StreamLoadAction::on_header(HttpRequest* req) {
             }
 
             std::map<string, string> records;
-            st = stream_load_record->get_batch(1, ctx->label, 1, records);
+            st = stream_load_record->get_batch(1, "", 3, records);
             if (!st.ok()) {
                 LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
             } else {
                 LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
                 std::map<std::string, std::string>::iterator it = records.begin();
-                ctx->parse_stream_load_audit(it->second);
-//                for (; it != records.end(); it++) {
-//                    LOG(INFO) << "get_batch  stream_load_record rocksdb successfully. label: " << it->first << ", value: " << it->second;
-//                }
+//                ctx->parse_stream_load_audit(it->second);
+                for (; it != records.end(); it++) {
+                    ctx->parse_stream_load_audit(it->second);
+                }
             }
         } else {
             LOG(WARNING) << "stream_load_record is null.";
