@@ -21,8 +21,10 @@
 
 #include "gen_cpp/PlanNodes_types.h"
 #include "http/http_handler.h"
+#include "olap/storage_engine.h"
 #include "runtime/client_cache.h"
 #include "runtime/message_body_sink.h"
+#include "runtime/stream_load/stream_load_record.h"
 
 namespace doris {
 

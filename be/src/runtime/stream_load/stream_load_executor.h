@@ -17,32 +17,33 @@
 
 #pragma once
 
-#include "rocksdb/db.h"
-
 namespace doris {
 
-class OlapMeta {
+class ExecEnv;
+class StreamLoadContext;
+class Status;
+class TTxnCommitAttachment;
+
+class StreamLoadExecutor {
+
 public:
-    StreamLoadRecord(const std::string& root_path);
+    StreamLoadExecutor(ExecEnv* exec_env) : _exec_env(exec_env) { }
 
-    virtual ~StreamLoadRecord();
+    Status begin_txn(StreamLoadContext* ctx);
 
-    OLAPStatus init();
+    Status commit_txn(StreamLoadContext* ctx);
 
-    OLAPStatus get(const int column_family_index, const std::string& key, std::string* value);
+    void rollback_txn(StreamLoadContext* ctx);
 
-    OLAPStatus put(const int column_family_index, const std::string& key, const std::string& value);
-
-    OLAPStatus remove(const int column_family_index, const std::string& key);
-
-    OLAPStatus iterate(const int column_family_index, const std::string& prefix,
-                       std::function<bool(const std::string&, const std::string&)> const& func);
-
+    Status execute_plan_fragment(StreamLoadContext* ctx);
 
 private:
-    std::string _root_path;
-    rocksdb::DB* _db;
-    std::vector<rocksdb::ColumnFamilyHandle*> _handles;
+    // collect the load statistics from context and set them to stat
+    // return true if stat is set, otherwise, return false
+    bool collect_load_stat(StreamLoadContext* ctx, TTxnCommitAttachment* attachment);
+
+private:
+    ExecEnv* _exec_env;
 };
 
-} // namespace doris
+}

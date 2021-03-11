@@ -15,6 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <map>
+#include <string>
+
+#include "rocksdb/db.h"
+
 #pragma once
 
 namespace doris {
@@ -31,7 +36,7 @@ public:
 
     Status put(const int column_family_index, const std::string& key, const std::string& value);
 
-    Status get_batch(const int column_family_index, const std::string& start, const int batch_size);
+    Status get_batch(const int column_family_index, const std::string& start, const int batch_size, std::map<std::string, std::string> &stream_load_records);
 
     Status remove(const int column_family_index, const std::string& key);
 
@@ -41,6 +46,14 @@ private:
     std::string _root_path;
     rocksdb::DB* _db;
     std::vector<rocksdb::ColumnFamilyHandle*> _handles;
+
+    enum ColumnFamilyIndex {
+        DEFAULT_COLUMN_FAMILY_INDEX = 0,
+        STREAM_LOAD_COLUMN_FAMILY_INDEX
+    };
+
+    const std::string DEFAULT_COLUMN_FAMILY = "default";
+    const std::string STREAM_LOAD_COLUMN_FAMILY = "stream_load";
 };
 
 } // namespace doris

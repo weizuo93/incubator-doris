@@ -225,6 +225,35 @@ Status StorageEngine::_init_store_map() {
     for (auto store : tmp_stores) {
         _store_map.emplace(store->path(), store);
     }
+
+    auto st = _init_stream_load_record();
+    if (!st.ok()) {
+        LOG(WARNING) << "status=" << st.to_string();
+    }
+
+    return Status::OK();
+}
+
+Status StorageEngine::_init_stream_load_record() {
+    std::string stream_load_record_path;
+    if (_store_map.size() > 0) {
+        stream_load_record_path = _store_map.begin()->first;
+        LOG(INFO) << "stream load record path: " << stream_load_record_path;
+
+        // init meta
+        _stream_load_record = new (std::nothrow) StreamLoadRecord(stream_load_record_path);
+        if (_stream_load_record == nullptr) {
+            RETURN_NOT_OK_STATUS_WITH_WARN(
+                    Status::MemoryAllocFailed("allocate memory for StreamLoadRecord failed"),
+                    "new StreamLoadRecord failed");
+        }
+        auto st = _stream_load_record->init();
+        if (!st.ok()) {
+            RETURN_NOT_OK_STATUS_WITH_WARN(
+                    Status::IOError(Substitute("open StreamLoadRecord rocksdb failed, path=$0", stream_load_record_path)),
+                    "init StreamLoadRecord failed");
+        }
+    }
     return Status::OK();
 }
 

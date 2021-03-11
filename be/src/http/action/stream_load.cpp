@@ -20,6 +20,7 @@
 #include <deque>
 #include <future>
 #include <sstream>
+#include <string>
 
 // use string iequal
 #include <event2/buffer.h>
@@ -132,6 +133,31 @@ void StreamLoadAction::handle(HttpRequest* req) {
     str = str + '\n';
     HttpChannel::send_reply(req, str);
 
+    auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
+    if (stream_load_record != nullptr) {
+        auto st = stream_load_record->put(1, ctx->label, str);
+        if (!st.ok()) {
+            LOG(WARNING) << "put stream_load_record rocksdb failed.";
+        } else {
+            LOG(WARNING) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
+        }
+
+        std::map<std::string, std::string> records;
+        st = stream_load_record->get_batch(1, ctx->label, 1, records);
+        if (!st.ok()) {
+            LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
+        } else {
+            LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
+            std::map<std::string, std::string>::iterator it = records.begin();
+            ctx->parse_stream_load_audit(it->second);
+//            for (; it != records.end(); it++) {
+//                LOG(INFO) << "get_batch  stream_load_record rocksdb successfully. label: " << it->first << ", value: " << it->second;
+//            }
+        }
+    } else {
+        LOG(WARNING) << "stream_load_record is null.";
+    }
+
     // update statstics
     streaming_load_requests_total->increment(1);
     streaming_load_duration_ms->increment(ctx->load_cost_nanos / 1000000);
@@ -200,6 +226,31 @@ int StreamLoadAction::on_header(HttpRequest* req) {
         // add new line at end
         str = str + '\n';
         HttpChannel::send_reply(req, str);
+
+        auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
+        if (stream_load_record != nullptr) {
+            auto st = stream_load_record->put(1, ctx->label, str);
+            if (!st.ok()) {
+                LOG(WARNING) << "put stream_load_record rocksdb failed.";
+            } else {
+                LOG(WARNING) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
+            }
+
+            std::map<string, string> records;
+            st = stream_load_record->get_batch(1, ctx->label, 1, records);
+            if (!st.ok()) {
+                LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
+            } else {
+                LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
+                std::map<std::string, std::string>::iterator it = records.begin();
+                ctx->parse_stream_load_audit(it->second);
+//                for (; it != records.end(); it++) {
+//                    LOG(INFO) << "get_batch  stream_load_record rocksdb successfully. label: " << it->first << ", value: " << it->second;
+//                }
+            }
+        } else {
+            LOG(WARNING) << "stream_load_record is null.";
+        }
         streaming_load_current_processing->increment(-1);
         return -1;
     }

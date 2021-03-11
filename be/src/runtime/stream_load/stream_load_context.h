@@ -96,6 +96,9 @@ public:
     }
 
     std::string to_json() const;
+
+    void parse_stream_load_audit(std::string stream_load_audit);
+
     // the old mini load result format is not same as stream load.
     // add this function for compatible with old mini load result format.
     std::string to_json_for_mini_load() const;

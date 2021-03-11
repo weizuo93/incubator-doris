@@ -89,6 +89,34 @@ std::string StreamLoadContext::to_json() const {
     return s.GetString();
 }
 
+void StreamLoadContext::parse_stream_load_audit(std::string stream_load_audit) {
+
+    rapidjson::Document document;
+    if (document.Parse(stream_load_audit.data()).HasParseError()) {
+        return;
+    }
+
+    std::stringstream ss;
+    ss << "stream_load_record.";
+    if (document.HasMember("Label")) {
+        const rapidjson::Value& label = document["Label"];
+        ss << " Label: " << label.GetString();
+    }
+
+    if (document.HasMember("Status")) {
+        const rapidjson::Value& status = document["Status"];
+        ss << ", Status: " << status.GetString();
+    }
+
+    if (document.HasMember("Message")) {
+        const rapidjson::Value& message = document["Message"];
+        ss << ", Message: " << message.GetString();
+    }
+
+    LOG(INFO) << ss.str() << ".";
+}
+
+
 /*
  * The old mini load result format is as follows:
  * (which defined in src/util/json_util.cpp)
