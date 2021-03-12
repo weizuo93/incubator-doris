@@ -24,6 +24,7 @@
 #include <thrift/protocol/TDebugProtocol.h>
 
 #include <boost/shared_ptr.hpp>
+#include <map>
 #include <memory>
 
 #include "common/config.h"
@@ -45,6 +46,7 @@
 #include "runtime/result_buffer_mgr.h"
 #include "runtime/result_queue_mgr.h"
 #include "runtime/routine_load/routine_load_task_executor.h"
+#include "runtime/stream_load/stream_load_context.h"
 #include "service/backend_options.h"
 #include "util/arrow/row_batch.h"
 #include "util/blocking_queue.hpp"
@@ -310,6 +312,29 @@ void BackendService::close_scanner(TScanCloseResult& result_, const TScanClosePa
     Status st = _exec_env->external_scan_context_mgr()->clear_scan_context(context_id);
     st.to_thrift(&t_status);
     result_.status = t_status;
+}
+
+void BackendService::get_stream_load_audit(TStreamLoadAuditResult& result, const std::string& params) {
+    auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
+    if (stream_load_record != nullptr) {
+        std::map<std::string, std::string> records;
+        auto st = stream_load_record->get_batch(1, params, 3, records);
+        if (!st.ok()) {
+            LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
+        } else {
+            LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
+            std::map<std::string, TStreamLoadAudit> stream_load_audits;
+            std::map<std::string, std::string>::iterator it = records.begin();
+            for (; it != records.end(); it++) {
+                TStreamLoadAudit stream_load_item;
+                StreamLoadContext::parse_stream_load_audit(it->second, stream_load_item);
+                stream_load_audits.emplace(it->first.c_str(), stream_load_item);
+            }
+            result.__set_stream_load_audit(stream_load_audits);
+        }
+    } else {
+        LOG(WARNING) << "stream_load_record is null.";
+    }
 }
 
 } // namespace doris

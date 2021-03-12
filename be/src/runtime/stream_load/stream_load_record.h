@@ -40,7 +40,9 @@ public:
 
     Status remove(const int column_family_index, const std::string& key);
 
+    Status remove_batch_from_first(const int column_family_index, const int batch_size);
 
+    Status clear(const int column_family_index);
 
 private:
     std::string _root_path;

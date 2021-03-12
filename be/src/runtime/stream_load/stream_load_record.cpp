@@ -116,4 +116,37 @@ Status StreamLoadRecord::remove(const int column_family_index, const std::string
     return Status::OK();
 }
 
+Status StreamLoadRecord::remove_batch_from_first(const int column_family_index, const int batch_size) {
+    rocksdb::ColumnFamilyHandle* handle = _handles[column_family_index];
+    rocksdb::WriteOptions write_options;
+    write_options.sync = false;
+    int num = 0;
+    std::unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        rocksdb::Status s = _db->Delete(write_options, handle, it->key());
+        if (!s.ok()) {
+            LOG(WARNING) << "rocks db delete key:" << it->key().ToString() << " failed, reason:" << s.ToString();
+        }
+        num++;
+        if (num >= batch_size) {
+            return Status::OK();
+        }
+    }
+    return Status::OK();
+}
+
+Status StreamLoadRecord::clear(const int column_family_index) {
+    rocksdb::ColumnFamilyHandle* handle = _handles[column_family_index];
+    rocksdb::WriteOptions write_options;
+    write_options.sync = false;
+    std::unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        rocksdb::Status s = _db->Delete(write_options, handle, it->key());
+        if (!s.ok()) {
+            LOG(WARNING) << "rocks db delete key:" << it->key().ToString() << " failed, reason:" << s.ToString();
+        }
+    }
+    return Status::OK();
+}
+
 } // namespace doris
