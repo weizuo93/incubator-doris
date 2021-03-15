@@ -19,10 +19,8 @@ package org.apache.doris.load;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
-import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Queues;
 import org.apache.doris.analysis.ShowStreamLoadStmt.StreamLoadState;
 import org.apache.doris.catalog.Catalog;
 import org.apache.doris.catalog.Database;
@@ -39,26 +37,30 @@ import org.apache.doris.thrift.TStreamLoadAuditResult;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.stream.Collectors;
 
 public class StreamLoadRecordMgr {
     private static final Logger LOG = LogManager.getLogger(StreamLoadRecordMgr.class);
 
-    private class LabelAndDb {
+    private class StreamLoadItem {
         private String label;
         private long dbId;
+        private String finishTime;
 
-        public LabelAndDb(String label, long dbId) {
+        public StreamLoadItem(String label, long dbId, String finishTime) {
             this.label = label;
             this.dbId = dbId;
+            this.finishTime = finishTime;
         }
 
         public String getLabel() {
@@ -68,9 +70,19 @@ public class StreamLoadRecordMgr {
         public long getDbId() {
             return dbId;
         }
+
+        public String getFinishTime() {
+            return finishTime;
+        }
     }
 
-    private LinkedBlockingQueue<LabelAndDb> streamLoadRecordQueue = Queues.newLinkedBlockingQueue();
+    class StreamLoadComparator implements Comparator<StreamLoadItem> {
+        public int compare(StreamLoadItem s1, StreamLoadItem s2) {
+            return s1.getFinishTime().compareTo(s2.getFinishTime());
+        }
+    }
+
+    Queue<StreamLoadItem> streamLoadRecordHeap = new PriorityQueue<>(new StreamLoadComparator());
     private Map<Long, Map<String, StreamLoadRecord>> dbIdToLabelToStreamLoadRecord = Maps.newConcurrentMap();
     private ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -82,7 +94,7 @@ public class StreamLoadRecordMgr {
     public void addStreamLoadRecord(long dbId, String label, StreamLoadRecord streamLoadRecord) {
         writeLock();
         while (isQueueFull()) {
-            LabelAndDb record = streamLoadRecordQueue.poll();
+            StreamLoadItem record = streamLoadRecordHeap.poll();
             if (record != null) {
                 String de_label = record.getLabel();
                 long de_dbId = record.getDbId();
@@ -99,8 +111,8 @@ public class StreamLoadRecordMgr {
             }
         }
 
-        LabelAndDb record = new LabelAndDb(label, dbId);
-        streamLoadRecordQueue.offer(record);
+        StreamLoadItem record = new StreamLoadItem(label, dbId, streamLoadRecord.getFinishTime());
+        streamLoadRecordHeap.offer(record);
 
         if (!dbIdToLabelToStreamLoadRecord.containsKey(dbId)) {
             dbIdToLabelToStreamLoadRecord.put(dbId, new ConcurrentHashMap<>());
@@ -160,7 +172,7 @@ public class StreamLoadRecordMgr {
     }
 
     public boolean isQueueFull() {
-        return streamLoadRecordQueue.size() >= Config.max_stream_load_record_size;
+        return streamLoadRecordHeap.size() >= Config.max_stream_load_record_size;
     }
 
     private void readLock() {

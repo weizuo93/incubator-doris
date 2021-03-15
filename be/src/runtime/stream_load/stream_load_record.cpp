@@ -17,11 +17,13 @@
 
 #include "runtime/stream_load/stream_load_record.h"
 
+#include "common/config.h"
 #include "common/status.h"
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice_transform.h"
+#include "util/time.h"
 
 
 namespace doris {
@@ -66,8 +68,8 @@ Status StreamLoadRecord::init() {
     return Status::OK();
 }
 
-Status StreamLoadRecord::put(const int column_family_index, const std::string& key, const std::string& value) {
-    rocksdb::ColumnFamilyHandle* handle = _handles[column_family_index];
+Status StreamLoadRecord::put(const std::string& key, const std::string& value) {
+    rocksdb::ColumnFamilyHandle* handle = _handles[1];
     rocksdb::WriteOptions write_options;
     write_options.sync = false;
     rocksdb::Status s = _db->Put(write_options, handle, rocksdb::Slice(key), rocksdb::Slice(value));
@@ -78,8 +80,8 @@ Status StreamLoadRecord::put(const int column_family_index, const std::string& k
     return Status::OK();
 }
 
-Status StreamLoadRecord::get_batch(const int column_family_index, const std::string& start, const int batch_size, std::map<std::string, std::string> &stream_load_records) {
-    rocksdb::ColumnFamilyHandle* handle = _handles[column_family_index];
+Status StreamLoadRecord::get_batch(const std::string& start, const int batch_size, std::map<std::string, std::string> &stream_load_records) {
+    rocksdb::ColumnFamilyHandle* handle = _handles[1];
     std::unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
     if (start == "") {
         it->SeekToFirst();
@@ -109,46 +111,25 @@ Status StreamLoadRecord::get_batch(const int column_family_index, const std::str
     return Status::OK();
 }
 
-Status StreamLoadRecord::remove(const int column_family_index, const std::string& key) {
-    rocksdb::ColumnFamilyHandle* handle = _handles[column_family_index];
-    rocksdb::WriteOptions write_options;
-    write_options.sync = false;
-    rocksdb::Status s = _db->Delete(write_options, handle, rocksdb::Slice(key));
-    if (!s.ok()) {
-        LOG(WARNING) << "rocks db delete key:" << key << " failed, reason:" << s.ToString();
-        return Status::InternalError("Stream load record rocksdb delete key failed");
-    }
-    return Status::OK();
-}
-
-Status StreamLoadRecord::remove_batch_from_first(const int column_family_index, const int batch_size) {
-    rocksdb::ColumnFamilyHandle* handle = _handles[column_family_index];
-    rocksdb::WriteOptions write_options;
-    write_options.sync = false;
-    int num = 0;
-    std::unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        rocksdb::Status s = _db->Delete(write_options, handle, it->key());
-        if (!s.ok()) {
-            LOG(WARNING) << "rocks db delete key:" << it->key().ToString() << " failed, reason:" << s.ToString();
-        }
-        num++;
-        if (num >= batch_size) {
-            return Status::OK();
-        }
-    }
-    return Status::OK();
-}
-
-Status StreamLoadRecord::clear(const int column_family_index) {
-    rocksdb::ColumnFamilyHandle* handle = _handles[column_family_index];
+Status StreamLoadRecord::clean_expired_stream_load_record() {
+    rocksdb::ColumnFamilyHandle* handle = _handles[1];
     rocksdb::WriteOptions write_options;
     write_options.sync = false;
     std::unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        rocksdb::Status s = _db->Delete(write_options, handle, it->key());
-        if (!s.ok()) {
-            LOG(WARNING) << "rocks db delete key:" << it->key().ToString() << " failed, reason:" << s.ToString();
+        std::string expire_time = ToStringFromUnixMicros(UnixMicros() - config::stream_load_record_expire_time_us);
+        auto index = it->key().ToString().find("_");
+        if (index != std::string::npos) {
+            auto finishTime = it->key().ToString().substr(0, index);
+            auto label = it->key().ToString().substr(index + 1, it->key().ToString().size());
+            if (finishTime.compare(expire_time) < 0) {
+                rocksdb::Status s = _db->Delete(write_options, handle, it->key());
+                if (!s.ok()) {
+                    LOG(WARNING) << "rocks db delete key:" << it->key().ToString() << " failed, reason:" << s.ToString();
+                } else {
+                    LOG(INFO) << "remove stream load record from rocksdb. label: " << label << ", stream load finish time: " << finishTime;
+                }
+            }
         }
     }
     return Status::OK();

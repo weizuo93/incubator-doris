@@ -34,15 +34,11 @@ public:
 
     Status init();
 
-    Status put(const int column_family_index, const std::string& key, const std::string& value);
+    Status put(const std::string& key, const std::string& value);
 
-    Status get_batch(const int column_family_index, const std::string& start, const int batch_size, std::map<std::string, std::string> &stream_load_records);
+    Status get_batch(const std::string& start, const int batch_size, std::map<std::string, std::string> &stream_load_records);
 
-    Status remove(const int column_family_index, const std::string& key);
-
-    Status remove_batch_from_first(const int column_family_index, const int batch_size);
-
-    Status clear(const int column_family_index);
+    Status clean_expired_stream_load_record();
 
 private:
     std::string _root_path;

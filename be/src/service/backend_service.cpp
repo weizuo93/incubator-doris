@@ -318,11 +318,11 @@ void BackendService::get_stream_load_audit(TStreamLoadAuditResult& result, const
     auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
     if (stream_load_record != nullptr) {
         std::map<std::string, std::string> records;
-        auto st = stream_load_record->get_batch(1, params, 3, records);
+        auto st = stream_load_record->get_batch(params, config::stream_load_record_batch_size, records);
         if (!st.ok()) {
             LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
         } else {
-            LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
+            LOG(INFO) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
             std::map<std::string, TStreamLoadAudit> stream_load_audits;
             std::map<std::string, std::string>::iterator it = records.begin();
             for (; it != records.end(); it++) {

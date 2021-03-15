@@ -90,4 +90,8 @@ public class StreamLoadRecord {
     public long getCreateTime() {
         return this.createTime;
     }
+
+    public String getFinishTime() {
+        return this.finishTime;
+    }
 }

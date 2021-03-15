@@ -544,6 +544,7 @@ void StorageEngine::stop() {
     THREAD_JOIN(_garbage_sweeper_thread);
     THREAD_JOIN(_disk_stat_monitor_thread);
     THREAD_JOIN(_fd_cache_clean_thread);
+    THREAD_JOIN(_stream_load_record_clean_thread);
 #undef THREAD_JOIN
 
 #define THREADS_JOIN(threads)           \
