@@ -136,9 +136,7 @@ void StreamLoadAction::handle(HttpRequest* req) {
     auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
     if (stream_load_record != nullptr) {
         auto st = stream_load_record->put(ToStringFromUnixMicros(ctx->start_micros + ctx->load_cost_micros) + "_" + ctx->label, str);
-        if (!st.ok()) {
-            LOG(WARNING) << "put stream_load_record rocksdb failed.";
-        } else {
+        if (st.ok()) {
             LOG(INFO) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
         }
     } else {
@@ -217,9 +215,7 @@ int StreamLoadAction::on_header(HttpRequest* req) {
         auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
         if (stream_load_record != nullptr) {
             auto st = stream_load_record->put(ToStringFromUnixMicros(ctx->start_micros + ctx->load_cost_micros) + "_" + ctx->label, str);
-            if (!st.ok()) {
-                LOG(WARNING) << "put stream_load_record rocksdb failed.";
-            } else {
+            if (st.ok()) {
                 LOG(INFO) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
             }
         } else {

@@ -86,7 +86,6 @@ Status StreamLoadRecord::get_batch(const std::string& start, const int batch_siz
     if (start == "") {
         it->SeekToFirst();
     } else {
-        LOG(INFO) << "get_batch stream_load_record rocksdb, start key: " << start;
         it->Seek(start);
         rocksdb::Status status = it->status();
         if (!status.ok()) {

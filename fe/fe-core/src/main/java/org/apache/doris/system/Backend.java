@@ -115,7 +115,7 @@ public class Backend implements Writable {
         
         this.decommissionType = DecommissionType.SystemDecommission.ordinal();
 
-        this.lastStreamLoadTime = "";
+        this.lastStreamLoadTime = "1970-01-01 00:00:00";
     }
 
     public Backend(long id, String host, int heartbeatPort) {
@@ -137,7 +137,7 @@ public class Backend implements Writable {
         this.backendState = BackendState.free.ordinal();
         this.decommissionType = DecommissionType.SystemDecommission.ordinal();
 
-        this.lastStreamLoadTime = "";
+        this.lastStreamLoadTime = "1970-01-01 00:00:00";
     }
 
     public long getId() {

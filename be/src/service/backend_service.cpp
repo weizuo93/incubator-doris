@@ -319,9 +319,7 @@ void BackendService::get_stream_load_audit(TStreamLoadAuditResult& result, const
     if (stream_load_record != nullptr) {
         std::map<std::string, std::string> records;
         auto st = stream_load_record->get_batch(params, config::stream_load_record_batch_size, records);
-        if (!st.ok()) {
-            LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
-        } else {
+        if (st.ok()) {
             LOG(INFO) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
             std::map<std::string, TStreamLoadAudit> stream_load_audits;
             std::map<std::string, std::string>::iterator it = records.begin();
@@ -332,13 +330,6 @@ void BackendService::get_stream_load_audit(TStreamLoadAuditResult& result, const
             }
             result.__set_stream_load_audit(stream_load_audits);
         }
-
-//        auto st = stream_load_record->clear(1);
-//        if (!st.ok()) {
-//            LOG(WARNING) << "clear stream_load_record rocksdb failed.";
-//        } else {
-//            LOG(WARNING) << "clear stream_load_record rocksdb successfully.";
-//        }
     } else {
         LOG(WARNING) << "stream_load_record is null.";
     }

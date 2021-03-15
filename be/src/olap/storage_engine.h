@@ -175,7 +175,7 @@ public:
     void create_base_compaction(TabletSharedPtr best_tablet,
                                 std::shared_ptr<BaseCompaction>& base_compaction);
 
-    StreamLoadRecord* get_stream_load_record() { return _stream_load_record; }
+    std::shared_ptr<StreamLoadRecord> get_stream_load_record() { return _stream_load_record; }
 
 private:
     // Instance should be inited from `static open()`
@@ -355,7 +355,7 @@ private:
     std::mutex _compaction_producer_sleep_mutex;
     std::condition_variable _compaction_producer_sleep_cv;
 
-    StreamLoadRecord* _stream_load_record = nullptr;
+    std::shared_ptr<StreamLoadRecord> _stream_load_record;
 
     DISALLOW_COPY_AND_ASSIGN(StorageEngine);
 };

@@ -121,7 +121,8 @@ StorageEngine::StorageEngine(const EngineOptions& options)
           _rowset_id_generator(new UniqueRowsetIdGenerator(options.backend_uid)),
           _memtable_flush_executor(nullptr),
           _default_rowset_type(ALPHA_ROWSET),
-          _heartbeat_flags(nullptr) {
+          _heartbeat_flags(nullptr),
+          _stream_load_record(nullptr) {
     if (_s_instance == nullptr) {
         _s_instance = this;
     }
@@ -240,8 +241,8 @@ Status StorageEngine::_init_stream_load_record() {
         stream_load_record_path = _store_map.begin()->first;
         LOG(INFO) << "stream load record path: " << stream_load_record_path;
 
-        // init meta
-        _stream_load_record = new (std::nothrow) StreamLoadRecord(stream_load_record_path);
+        // init stream load record rocksdb
+        _stream_load_record.reset(new StreamLoadRecord(stream_load_record_path));
         if (_stream_load_record == nullptr) {
             RETURN_NOT_OK_STATUS_WITH_WARN(
                     Status::MemoryAllocFailed("allocate memory for StreamLoadRecord failed"),

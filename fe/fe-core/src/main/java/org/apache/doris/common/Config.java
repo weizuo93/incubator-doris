@@ -589,7 +589,7 @@ public class Config extends ConfigBase {
      * Default max number of recent stream load record that can be stored in memory.
      */
     @ConfField(mutable = true, masterOnly = true)
-    public static int max_stream_load_record_size = 20;
+    public static int max_stream_load_record_size = 5000;
 
     /**
      * maximum concurrent running txn num including prepare, commit txns under a single db
