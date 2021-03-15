@@ -84,7 +84,12 @@ Status StreamLoadRecord::get_batch(const int column_family_index, const std::str
     if (start == "") {
         it->SeekToFirst();
     } else {
+        LOG(INFO) << "get_batch stream_load_record rocksdb, start key: " << start;
         it->Seek(start);
+        rocksdb::Status status = it->status();
+        if (!status.ok()) {
+            it->SeekToFirst();
+        }
     }
     rocksdb::Status status = it->status();
     if (!status.ok()) {
@@ -92,7 +97,7 @@ Status StreamLoadRecord::get_batch(const int column_family_index, const std::str
         return Status::InternalError("Stream load record rocksdb seek failed");
     }
     int num = 0;
-    for (; it->Valid(); it->Next()) {
+    for (it->Next(); it->Valid(); it->Next()) {
         std::string key = it->key().ToString();
         std::string value = it->value().ToString();
         stream_load_records[key] = value;

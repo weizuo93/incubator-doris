@@ -135,24 +135,12 @@ void StreamLoadAction::handle(HttpRequest* req) {
 
     auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
     if (stream_load_record != nullptr) {
-        auto st = stream_load_record->put(1, ctx->label, str);
+        auto st = stream_load_record->put(1, ToStringFromUnixMicros(ctx->start_micros + ctx->load_cost_micros) + "_" + ctx->label, str);
         if (!st.ok()) {
             LOG(WARNING) << "put stream_load_record rocksdb failed.";
         } else {
             LOG(WARNING) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
         }
-
-//        std::map<std::string, std::string> records;
-//        st = stream_load_record->get_batch(1, "", 3, records);
-//        if (!st.ok()) {
-//            LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
-//        } else {
-//            LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
-//            std::map<std::string, std::string>::iterator it = records.begin();
-//            for (; it != records.end(); it++) {
-//                ctx->parse_stream_load_audit(it->second);
-//            }
-//        }
     } else {
         LOG(WARNING) << "stream_load_record is null.";
     }
@@ -228,24 +216,12 @@ int StreamLoadAction::on_header(HttpRequest* req) {
 
         auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
         if (stream_load_record != nullptr) {
-            auto st = stream_load_record->put(1, ctx->label, str);
+            auto st = stream_load_record->put(1, ToStringFromUnixMicros(ctx->start_micros + ctx->load_cost_micros) + "_" + ctx->label, str);
             if (!st.ok()) {
                 LOG(WARNING) << "put stream_load_record rocksdb failed.";
             } else {
                 LOG(WARNING) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
             }
-
-//            std::map<string, string> records;
-//            st = stream_load_record->get_batch(1, "", 3, records);
-//            if (!st.ok()) {
-//                LOG(WARNING) << "get_batch stream_load_record rocksdb failed.";
-//            } else {
-//                LOG(WARNING) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
-//                std::map<std::string, std::string>::iterator it = records.begin();
-//                for (; it != records.end(); it++) {
-//                    ctx->parse_stream_load_audit(it->second);
-//                }
-//            }
         } else {
             LOG(WARNING) << "stream_load_record is null.";
         }

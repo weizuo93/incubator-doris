@@ -332,6 +332,13 @@ void BackendService::get_stream_load_audit(TStreamLoadAuditResult& result, const
             }
             result.__set_stream_load_audit(stream_load_audits);
         }
+
+//        auto st = stream_load_record->clear(1);
+//        if (!st.ok()) {
+//            LOG(WARNING) << "clear stream_load_record rocksdb failed.";
+//        } else {
+//            LOG(WARNING) << "clear stream_load_record rocksdb successfully.";
+//        }
     } else {
         LOG(WARNING) << "stream_load_record is null.";
     }
