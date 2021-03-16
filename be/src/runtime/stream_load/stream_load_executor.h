@@ -45,4 +45,4 @@ private:
     ExecEnv* _exec_env;
 };
 
-}// namespace doris
+} // namespace doris
