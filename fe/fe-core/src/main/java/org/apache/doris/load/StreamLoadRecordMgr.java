@@ -259,7 +259,7 @@ public class StreamLoadRecordMgr {
                         (System.currentTimeMillis() - start));
 
                 try {
-                    TimeUnit.SECONDS.sleep(5);
+                    TimeUnit.SECONDS.sleep(Config.fetch_stream_load_record_interval_second);
                 } catch (InterruptedException e1) {
                     // do nothing
                 }

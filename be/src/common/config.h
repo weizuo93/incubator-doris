@@ -350,9 +350,10 @@ CONF_Int32(tablet_writer_open_rpc_timeout_sec, "60");
 CONF_mBool(tablet_writer_ignore_eovercrowded, "false");
 // batch size of stream load record reported to FE
 CONF_mInt32(stream_load_record_batch_size, "50");
-// expire time of stream load record in rocksdb. 1000*1000*60*60=3600000000
-CONF_mInt64(stream_load_record_expire_time_us, "3600000000");
-CONF_mInt64(clean_stream_load_record_interval_secs, "600");
+// expire time of stream load record in rocksdb. 1000*1000*60*60*8=28800000000(8 hour)
+CONF_mInt64(stream_load_record_expire_time_us, "28800000000");
+// time interval to clean expired stream load records
+CONF_mInt64(clean_stream_load_record_interval_secs, "1800");
 
 // OlapTableSink sender's send interval, should be less than the real response time of a tablet writer rpc.
 // You may need to lower the speed when the sink receiver bes are too busy.

@@ -17,7 +17,39 @@
 
 package org.apache.doris.common;
 
-import org.apache.doris.thrift.*;
+import org.apache.doris.thrift.BackendService;
+import org.apache.doris.thrift.PaloInternalServiceVersion;
+import org.apache.doris.thrift.TAgentPublishRequest;
+import org.apache.doris.thrift.TAgentResult;
+import org.apache.doris.thrift.TAgentTaskRequest;
+import org.apache.doris.thrift.TCancelPlanFragmentParams;
+import org.apache.doris.thrift.TCancelPlanFragmentResult;
+import org.apache.doris.thrift.TDeleteEtlFilesRequest;
+import org.apache.doris.thrift.TExecPlanFragmentParams;
+import org.apache.doris.thrift.TExecPlanFragmentResult;
+import org.apache.doris.thrift.TExportStatusResult;
+import org.apache.doris.thrift.TExportTaskRequest;
+import org.apache.doris.thrift.TFetchDataParams;
+import org.apache.doris.thrift.TFetchDataResult;
+import org.apache.doris.thrift.TMiniLoadEtlStatusRequest;
+import org.apache.doris.thrift.TMiniLoadEtlStatusResult;
+import org.apache.doris.thrift.TMiniLoadEtlTaskRequest;
+import org.apache.doris.thrift.TNetworkAddress;
+import org.apache.doris.thrift.TResultBatch;
+import org.apache.doris.thrift.TRoutineLoadTask;
+import org.apache.doris.thrift.TScanBatchResult;
+import org.apache.doris.thrift.TScanCloseParams;
+import org.apache.doris.thrift.TScanCloseResult;
+import org.apache.doris.thrift.TScanNextBatchParams;
+import org.apache.doris.thrift.TScanOpenParams;
+import org.apache.doris.thrift.TScanOpenResult;
+import org.apache.doris.thrift.TSnapshotRequest;
+import org.apache.doris.thrift.TStatus;
+import org.apache.doris.thrift.TStreamLoadAuditResult;
+import org.apache.doris.thrift.TTabletStatResult;
+import org.apache.doris.thrift.TTransmitDataParams;
+import org.apache.doris.thrift.TTransmitDataResult;
+import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.utframe.UtFrameUtils;
 
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;

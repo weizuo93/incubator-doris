@@ -188,7 +188,6 @@ void StreamLoadContext::parse_stream_load_audit(std::string stream_load_audit, T
     }
 }
 
-
 /*
  * The old mini load result format is as follows:
  * (which defined in src/util/json_util.cpp)
