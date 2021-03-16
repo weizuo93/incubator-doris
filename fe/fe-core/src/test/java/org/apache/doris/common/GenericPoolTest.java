@@ -45,7 +45,7 @@ import org.apache.doris.thrift.TScanOpenParams;
 import org.apache.doris.thrift.TScanOpenResult;
 import org.apache.doris.thrift.TSnapshotRequest;
 import org.apache.doris.thrift.TStatus;
-import org.apache.doris.thrift.TStreamLoadAuditResult;
+import org.apache.doris.thrift.TStreamLoadRecordResult;
 import org.apache.doris.thrift.TTabletStatResult;
 import org.apache.doris.thrift.TTransmitDataParams;
 import org.apache.doris.thrift.TTransmitDataResult;
@@ -221,7 +221,7 @@ public class GenericPoolTest {
         }
 
         @Override
-        public TStreamLoadAuditResult getStreamLoadAudit(String params) throws TException {
+        public TStreamLoadRecordResult getStreamLoadRecord(String params) throws TException {
             // TODO Auto-generated method stub
             return null;
         }

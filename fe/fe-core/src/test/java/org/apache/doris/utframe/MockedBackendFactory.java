@@ -65,7 +65,7 @@ import org.apache.doris.thrift.TScanOpenResult;
 import org.apache.doris.thrift.TSnapshotRequest;
 import org.apache.doris.thrift.TStatus;
 import org.apache.doris.thrift.TStatusCode;
-import org.apache.doris.thrift.TStreamLoadAuditResult;
+import org.apache.doris.thrift.TStreamLoadRecordResult;
 import org.apache.doris.thrift.TTabletStatResult;
 import org.apache.doris.thrift.TTransmitDataParams;
 import org.apache.doris.thrift.TTransmitDataResult;
@@ -284,8 +284,8 @@ public class MockedBackendFactory {
         }
 
         @Override
-        public TStreamLoadAuditResult getStreamLoadAudit(String params) throws TException {
-            return new TStreamLoadAuditResult(Maps.newHashMap());
+        public TStreamLoadRecordResult getStreamLoadRecord(String params) throws TException {
+            return new TStreamLoadRecordResult(Maps.newHashMap());
         }
     }
 

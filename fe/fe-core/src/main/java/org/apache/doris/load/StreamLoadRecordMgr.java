@@ -32,8 +32,8 @@ import org.apache.doris.system.Backend;
 import org.apache.doris.system.SystemInfoService;
 import org.apache.doris.thrift.BackendService;
 import org.apache.doris.thrift.TNetworkAddress;
-import org.apache.doris.thrift.TStreamLoadAudit;
-import org.apache.doris.thrift.TStreamLoadAuditResult;
+import org.apache.doris.thrift.TStreamLoadRecord;
+import org.apache.doris.thrift.TStreamLoadRecordResult;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -205,12 +205,12 @@ public class StreamLoadRecordMgr {
                     try {
                         address = new TNetworkAddress(backend.getHost(), backend.getBePort());
                         client = ClientPool.backendPool.borrowObject(address);
-                        TStreamLoadAuditResult result = client.getStreamLoadAudit(backend.getLastStreamLoadTime());
-                        Map<String, TStreamLoadAudit> streamLoadAudit = result.getStreamLoadAudit();
-                        LOG.info("receive stream load audit info from backend: {}. batch size: {}", backend.getHost(), streamLoadAudit.size());
-                        for (Map.Entry<String, TStreamLoadAudit> entry : streamLoadAudit.entrySet()) {
-                            TStreamLoadAudit streamLoadItem= entry.getValue();
-                            LOG.info("receive stream load audit info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
+                        TStreamLoadRecordResult result = client.getStreamLoadRecord(backend.getLastStreamLoadTime());
+                        Map<String, TStreamLoadRecord> streamLoadRecordBatch = result.getStreamLoadRecord();
+                        LOG.info("receive stream load audit info from backend: {}. batch size: {}", backend.getHost(), streamLoadRecordBatch.size());
+                        for (Map.Entry<String, TStreamLoadRecord> entry : streamLoadRecordBatch.entrySet()) {
+                            TStreamLoadRecord streamLoadItem= entry.getValue();
+                            LOG.info("receive stream load record info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
                                             " status: {}, message: {}, error_url: {}, total_rows: {}, loaded_rows: {}, filtered_rows: {}," +
                                             " unselected_rows: {}, load_bytes: {}, start_time: {}, finish_time: {}.",
                                     backend.getHost(), streamLoadItem.getLabel(), streamLoadItem.getDb(), streamLoadItem.getTbl(), streamLoadItem.getUser(), streamLoadItem.getUserIp(),

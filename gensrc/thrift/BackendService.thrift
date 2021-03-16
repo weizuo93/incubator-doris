@@ -80,7 +80,7 @@ struct TProxyResult {
     2: optional TKafkaMetaProxyResult kafka_meta_result;
 }
 
-struct TStreamLoadAudit {
+struct TStreamLoadRecord {
     1: optional string cluster
     2: required string user
     3: required string passwd
@@ -101,8 +101,8 @@ struct TStreamLoadAudit {
     18: required string finish_time
 }
 
-struct TStreamLoadAuditResult {
-    1: required map<string, TStreamLoadAudit> stream_load_audit
+struct TStreamLoadRecordResult {
+    1: required map<string, TStreamLoadRecord> stream_load_record
 }
 
 service BackendService {
@@ -159,6 +159,6 @@ service BackendService {
     // release the context resource associated with the context_id
     DorisExternalService.TScanCloseResult close_scanner(1: DorisExternalService.TScanCloseParams params);
 
-    TStreamLoadAuditResult get_stream_load_audit(1: string params);
+    TStreamLoadRecordResult get_stream_load_record(1: string params);
 
 }
