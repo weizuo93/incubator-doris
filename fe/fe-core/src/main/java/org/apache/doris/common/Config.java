@@ -103,7 +103,7 @@ public class Config extends ConfigBase {
      */
     @ConfField public static String audit_log_dir = PaloFe.DORIS_HOME_DIR + "/log";
     @ConfField public static int audit_log_roll_num = 90;
-    @ConfField public static String[] audit_log_modules = {"slow_query", "query", "load"};
+    @ConfField public static String[] audit_log_modules = {"slow_query", "query", "load", "stream_load"};
     @ConfField(mutable = true) public static long qe_slow_log_ms = 5000;
     @ConfField public static String audit_log_roll_interval = "DAY";
     @ConfField public static String audit_log_delete_age = "30d";
@@ -584,12 +584,6 @@ public class Config extends ConfigBase {
      */
     @ConfField(mutable = true, masterOnly = true)
     public static int desired_max_waiting_jobs = 100;
-
-    /**
-     * Default max number of recent stream load record that can be stored in memory.
-     */
-    @ConfField(mutable = true, masterOnly = true)
-    public static int max_stream_load_record_size = 5000;
 
     /**
      * fetch stream load record interval.
