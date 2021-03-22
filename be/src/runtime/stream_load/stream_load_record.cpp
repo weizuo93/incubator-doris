@@ -20,9 +20,11 @@
 #include "common/config.h"
 #include "common/status.h"
 #include "rocksdb/db.h"
-#include "rocksdb/slice.h"
+
 #include "rocksdb/options.h"
+#include "rocksdb/slice.h"
 #include "rocksdb/slice_transform.h"
+#include "rocksdb/utilities/db_ttl.h"
 #include "util/time.h"
 
 
@@ -36,11 +38,11 @@ StreamLoadRecord::StreamLoadRecord(const std::string& root_path)
 }
 
 StreamLoadRecord::~StreamLoadRecord() {
-    for (auto handle : _handles) {
-        _db->DestroyColumnFamilyHandle(handle);
-        handle = nullptr;
-    }
     if (_db != nullptr) {
+        for (auto handle : _handles) {
+            _db->DestroyColumnFamilyHandle(handle);
+            handle = nullptr;
+        }
         delete _db;
         _db= nullptr;
     }
@@ -60,7 +62,10 @@ Status StreamLoadRecord::init() {
     rocksdb::ColumnFamilyOptions stream_load_column_family;
     stream_load_column_family.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(PREFIX_LENGTH));
     column_families.emplace_back(STREAM_LOAD_COLUMN_FAMILY, stream_load_column_family);
-    rocksdb::Status s = rocksdb::DB::Open(options, db_path, column_families, &_handles, &_db);
+//    rocksdb::Status s = rocksdb::DB::Open(options, db_path, column_families, &_handles, &_db);
+    std::vector<int32_t> ttl = {config::stream_load_record_expire_time_secs, config::stream_load_record_expire_time_secs};
+    rocksdb::Status s = rocksdb::DBWithTTL::Open(options, db_path, column_families, &_handles, &_db, ttl);
+
     if (!s.ok() || _db == nullptr) {
         LOG(WARNING) << "rocks db open failed, reason:" << s.ToString();
         return Status::InternalError("Stream load record rocksdb open failed");
@@ -80,7 +85,7 @@ Status StreamLoadRecord::put(const std::string& key, const std::string& value) {
     return Status::OK();
 }
 
-Status StreamLoadRecord::get_batch(const std::string& start, const int batch_size, std::map<std::string, std::string> &stream_load_records) {
+Status StreamLoadRecord::get_batch(const std::string& start, const int batch_size, std::map<std::string, std::string>* stream_load_records) {
     rocksdb::ColumnFamilyHandle* handle = _handles[1];
     std::unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
     if (start == "") {
@@ -101,7 +106,7 @@ Status StreamLoadRecord::get_batch(const std::string& start, const int batch_siz
     for (it->Next(); it->Valid(); it->Next()) {
         std::string key = it->key().ToString();
         std::string value = it->value().ToString();
-        stream_load_records[key] = value;
+        (*stream_load_records)[key] = value;
         num++;
         if (num >= batch_size) {
             return Status::OK();
@@ -110,6 +115,7 @@ Status StreamLoadRecord::get_batch(const std::string& start, const int batch_siz
     return Status::OK();
 }
 
+/*
 Status StreamLoadRecord::clean_expired_stream_load_record() {
     rocksdb::ColumnFamilyHandle* handle = _handles[1];
     rocksdb::WriteOptions write_options;
@@ -133,5 +139,6 @@ Status StreamLoadRecord::clean_expired_stream_load_record() {
     }
     return Status::OK();
 }
+ */
 
 } // namespace doris

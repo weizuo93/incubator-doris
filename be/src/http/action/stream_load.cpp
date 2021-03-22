@@ -134,15 +134,7 @@ void StreamLoadAction::handle(HttpRequest* req) {
     str = str + '\n';
     HttpChannel::send_reply(req, str);
 
-    auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
-    if (stream_load_record != nullptr) {
-        auto st = stream_load_record->put(ToStringFromUnixMicros(ctx->start_micros + ctx->load_cost_micros) + "_" + ctx->label, str);
-        if (st.ok()) {
-            LOG(INFO) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
-        }
-    } else {
-        LOG(WARNING) << "stream_load_record is null.";
-    }
+    _sava_stream_load_record(ctx, str);
 
     // update statstics
     streaming_load_requests_total->increment(1);
@@ -213,16 +205,8 @@ int StreamLoadAction::on_header(HttpRequest* req) {
         str = str + '\n';
         HttpChannel::send_reply(req, str);
 
-        auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
-        if (stream_load_record != nullptr) {
-            auto st = stream_load_record->put(ToStringFromUnixMicros(ctx->start_micros + ctx->load_cost_micros) + "_" + ctx->label, str);
-            if (st.ok()) {
-                LOG(INFO) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
-            }
-        } else {
-            LOG(WARNING) << "stream_load_record is null.";
-        }
-        streaming_load_current_processing->increment(-1);
+        _sava_stream_load_record(ctx, str);
+
         return -1;
     }
     return 0;
@@ -525,6 +509,18 @@ Status StreamLoadAction::_data_saved_path(HttpRequest* req, std::string* file_pa
     ss << prefix << "/" << req->param(HTTP_TABLE_KEY) << "." << buf << "." << tv.tv_usec;
     *file_path = ss.str();
     return Status::OK();
+}
+
+void StreamLoadAction::_sava_stream_load_record(StreamLoadContext* ctx, const std::string& str) {
+    auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
+    if (stream_load_record != nullptr) {
+        auto st = stream_load_record->put(ToStringFromUnixMicros(ctx->start_micros + ctx->load_cost_micros) + "_" + ctx->label, str);
+        if (st.ok()) {
+            LOG(INFO) << "put stream_load_record rocksdb successfully. label: " << ctx->label;
+        }
+    } else {
+        LOG(WARNING) << "stream_load_record is null.";
+    }
 }
 
 } // namespace doris

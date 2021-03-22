@@ -103,7 +103,7 @@ std::string StreamLoadContext::to_json() const {
     return s.GetString();
 }
 
-void StreamLoadContext::parse_stream_load_record(std::string stream_load_record, TStreamLoadRecord& stream_load_item) {
+void StreamLoadContext::parse_stream_load_record(const std::string& stream_load_record, TStreamLoadRecord& stream_load_item) {
 
     rapidjson::Document document;
     if (document.Parse(stream_load_record.data()).HasParseError()) {

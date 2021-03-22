@@ -18,7 +18,7 @@
 #include <map>
 #include <string>
 
-#include "rocksdb/db.h"
+#include "rocksdb/utilities/db_ttl.h"
 
 #pragma once
 
@@ -36,13 +36,13 @@ public:
 
     Status put(const std::string& key, const std::string& value);
 
-    Status get_batch(const std::string& start, const int batch_size, std::map<std::string, std::string> &stream_load_records);
+    Status get_batch(const std::string& start, const int batch_size, std::map<std::string, std::string>* stream_load_records);
 
     Status clean_expired_stream_load_record();
 
 private:
     std::string _root_path;
-    rocksdb::DB* _db;
+    rocksdb::DBWithTTL* _db;
     std::vector<rocksdb::ColumnFamilyHandle*> _handles;
 
     enum ColumnFamilyIndex {
