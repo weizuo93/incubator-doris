@@ -63,12 +63,11 @@ public class StreamLoadRecordMgr extends MasterDaemon {
                     client = ClientPool.backendPool.borrowObject(address);
                     TStreamLoadRecordResult result = client.getStreamLoadRecord(backend.getLastStreamLoadTime());
                     Map<String, TStreamLoadRecord> streamLoadRecordBatch = result.getStreamLoadRecord();
-                    LOG.info("receive stream load audit info from backend: {}. batch size: {}", backend.getHost(), streamLoadRecordBatch.size());
                     pullRecordSize += streamLoadRecordBatch.size();
                     String lastStreamLoadTime = "";
                     for (Map.Entry<String, TStreamLoadRecord> entry : streamLoadRecordBatch.entrySet()) {
                         TStreamLoadRecord streamLoadItem= entry.getValue();
-                        LOG.info("receive stream load record info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
+                        LOG.debug("receive stream load record info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
                                         " status: {}, message: {}, error_url: {}, total_rows: {}, loaded_rows: {}, filtered_rows: {}," +
                                         " unselected_rows: {}, load_bytes: {}, start_time: {}, finish_time: {}.",
                                 backend.getHost(), streamLoadItem.getLabel(), streamLoadItem.getDb(), streamLoadItem.getTbl(), streamLoadItem.getUser(), streamLoadItem.getUserIp(),

@@ -313,7 +313,6 @@ private:
     // thread to produce both base and cumulative compaction tasks
     scoped_refptr<Thread> _compaction_tasks_producer_thread;
     scoped_refptr<Thread> _fd_cache_clean_thread;
-    scoped_refptr<Thread> _stream_load_record_clean_thread;
     // threads to clean all file descriptor not actively in use
     std::vector<scoped_refptr<Thread>> _path_gc_threads;
     // threads to scan disk paths

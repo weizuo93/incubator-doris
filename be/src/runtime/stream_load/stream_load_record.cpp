@@ -30,7 +30,6 @@
 
 namespace doris {
 const std::string STREAM_LOAD_POSTFIX = "/stream_load";
-const size_t PREFIX_LENGTH = 4;
 
 StreamLoadRecord::StreamLoadRecord(const std::string& root_path)
         : _root_path(root_path),
@@ -59,13 +58,7 @@ Status StreamLoadRecord::init() {
     std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
     // default column family is required
     column_families.emplace_back(DEFAULT_COLUMN_FAMILY, rocksdb::ColumnFamilyOptions());
-    // stream load column family add prefix extractor to improve performance and ensure correctness
-//    rocksdb::ColumnFamilyOptions stream_load_column_family;
-//    stream_load_column_family.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(PREFIX_LENGTH));
-//    stream_load_column_family.max_bytes_for_level_base = 2 * 1024 * 1024;
-//    stream_load_column_family.write_buffer_size = 1024 * 1024;
-//    stream_load_column_family.level0_file_num_compaction_trigger = 2;
-//    column_families.emplace_back(STREAM_LOAD_COLUMN_FAMILY, stream_load_column_family);
+    // stream load column family
     column_families.emplace_back(STREAM_LOAD_COLUMN_FAMILY, rocksdb::ColumnFamilyOptions());
     std::vector<int32_t> ttls = {config::stream_load_record_expire_time_secs, config::stream_load_record_expire_time_secs};
     rocksdb::Status s = rocksdb::DBWithTTL::Open(options, db_path, column_families, &_handles, &_db, ttls);

@@ -227,10 +227,7 @@ Status StorageEngine::_init_store_map() {
         _store_map.emplace(store->path(), store);
     }
 
-    auto st = _init_stream_load_record();
-    if (!st.ok()) {
-        LOG(WARNING) << "status=" << st.to_string();
-    }
+    RETURN_NOT_OK_STATUS_WITH_WARN(_init_stream_load_record(), "init StreamLoadRecord failed");
 
     return Status::OK();
 }
@@ -545,7 +542,6 @@ void StorageEngine::stop() {
     THREAD_JOIN(_garbage_sweeper_thread);
     THREAD_JOIN(_disk_stat_monitor_thread);
     THREAD_JOIN(_fd_cache_clean_thread);
-    THREAD_JOIN(_stream_load_record_clean_thread);
 #undef THREAD_JOIN
 
 #define THREADS_JOIN(threads)           \
