@@ -118,13 +118,6 @@ Status StorageEngine::start_bg_threads() {
         LOG(INFO) << "path scan/gc threads started. number:" << get_stores().size();
     }
 
-    // stream load record clean thread
-//    RETURN_IF_ERROR(Thread::create(
-//            "StorageEngine", "stream_load_record_clean_thread",
-//            [this]() { this->_stream_load_record_clean_thread_callback(); },
-//            &_stream_load_record_clean_thread));
-//    LOG(INFO) << "stream load record clean thread started";
-
     LOG(INFO) << "all storage engine's background threads are started.";
     return Status::OK();
 }
@@ -315,22 +308,6 @@ void StorageEngine::_tablet_checkpoint_callback(DataDir* data_dir) {
         }
     } while (!_stop_background_threads_latch.wait_for(MonoDelta::FromSeconds(interval)));
 }
-
-/*
-void StorageEngine::_stream_load_record_clean_thread_callback() {
-#ifdef GOOGLE_PROFILER
-    ProfilerRegisterThread();
-#endif
-
-    do {
-        LOG(INFO) << "begin to do clean expire stream load record in rocksdb";
-        auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
-        if (stream_load_record != nullptr) {
-            auto st = stream_load_record->clean_expired_stream_load_record();
-        }
-    } while (!_stop_background_threads_latch.wait_for(MonoDelta::FromSeconds(config::clean_stream_load_record_interval_secs)));
-}
-*/
 
 void StorageEngine::_compaction_tasks_producer_callback() {
 #ifdef GOOGLE_PROFILER

@@ -34,7 +34,8 @@ const size_t PREFIX_LENGTH = 4;
 
 StreamLoadRecord::StreamLoadRecord(const std::string& root_path)
         : _root_path(root_path),
-          _db(nullptr) {
+          _db(nullptr),
+          _last_compaction_time(UnixMillis()) {
 }
 
 StreamLoadRecord::~StreamLoadRecord() {
@@ -59,12 +60,15 @@ Status StreamLoadRecord::init() {
     // default column family is required
     column_families.emplace_back(DEFAULT_COLUMN_FAMILY, rocksdb::ColumnFamilyOptions());
     // stream load column family add prefix extractor to improve performance and ensure correctness
-    rocksdb::ColumnFamilyOptions stream_load_column_family;
-    stream_load_column_family.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(PREFIX_LENGTH));
-    column_families.emplace_back(STREAM_LOAD_COLUMN_FAMILY, stream_load_column_family);
-//    rocksdb::Status s = rocksdb::DB::Open(options, db_path, column_families, &_handles, &_db);
-    std::vector<int32_t> ttl = {config::stream_load_record_expire_time_secs, config::stream_load_record_expire_time_secs};
-    rocksdb::Status s = rocksdb::DBWithTTL::Open(options, db_path, column_families, &_handles, &_db, ttl);
+//    rocksdb::ColumnFamilyOptions stream_load_column_family;
+//    stream_load_column_family.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(PREFIX_LENGTH));
+//    stream_load_column_family.max_bytes_for_level_base = 2 * 1024 * 1024;
+//    stream_load_column_family.write_buffer_size = 1024 * 1024;
+//    stream_load_column_family.level0_file_num_compaction_trigger = 2;
+//    column_families.emplace_back(STREAM_LOAD_COLUMN_FAMILY, stream_load_column_family);
+    column_families.emplace_back(STREAM_LOAD_COLUMN_FAMILY, rocksdb::ColumnFamilyOptions());
+    std::vector<int32_t> ttls = {config::stream_load_record_expire_time_secs, config::stream_load_record_expire_time_secs};
+    rocksdb::Status s = rocksdb::DBWithTTL::Open(options, db_path, column_families, &_handles, &_db, ttls);
 
     if (!s.ok() || _db == nullptr) {
         LOG(WARNING) << "rocks db open failed, reason:" << s.ToString();
@@ -81,6 +85,14 @@ Status StreamLoadRecord::put(const std::string& key, const std::string& value) {
     if (!s.ok()) {
         LOG(WARNING) << "rocks db put key:" << key << " failed, reason:" << s.ToString();
         return Status::InternalError("Stream load record rocksdb put failed");
+    }
+
+    if ((UnixMillis() - _last_compaction_time) / 1000 > config::clean_stream_load_record_interval_secs) {
+        rocksdb::CompactRangeOptions options;
+        s = _db->CompactRange(options, _handles[1], nullptr, nullptr);
+        if (s.ok()) {
+            _last_compaction_time = UnixMillis();
+        }
     }
     return Status::OK();
 }
@@ -114,31 +126,5 @@ Status StreamLoadRecord::get_batch(const std::string& start, const int batch_siz
     }
     return Status::OK();
 }
-
-/*
-Status StreamLoadRecord::clean_expired_stream_load_record() {
-    rocksdb::ColumnFamilyHandle* handle = _handles[1];
-    rocksdb::WriteOptions write_options;
-    write_options.sync = false;
-    std::unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string expire_time = ToStringFromUnixMicros(UnixMicros() - config::stream_load_record_expire_time_us);
-        auto index = it->key().ToString().find("_");
-        if (index != std::string::npos) {
-            auto finishTime = it->key().ToString().substr(0, index);
-            auto label = it->key().ToString().substr(index + 1, it->key().ToString().size());
-            if (finishTime.compare(expire_time) < 0) {
-                rocksdb::Status s = _db->Delete(write_options, handle, it->key());
-                if (!s.ok()) {
-                    LOG(WARNING) << "rocks db delete key:" << it->key().ToString() << " failed, reason:" << s.ToString();
-                } else {
-                    LOG(INFO) << "remove stream load record from rocksdb. label: " << label << ", stream load finish time: " << finishTime;
-                }
-            }
-        }
-    }
-    return Status::OK();
-}
- */
 
 } // namespace doris
