@@ -68,7 +68,7 @@ public class StreamLoadRecordMgr extends MasterDaemon {
                     String lastStreamLoadTime = "";
                     for (Map.Entry<String, TStreamLoadRecord> entry : streamLoadRecordBatch.entrySet()) {
                         TStreamLoadRecord streamLoadItem= entry.getValue();
-                        LOG.debug("receive stream load record info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
+                        LOG.info("receive stream load record info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
                                         " status: {}, message: {}, error_url: {}, total_rows: {}, loaded_rows: {}, filtered_rows: {}," +
                                         " unselected_rows: {}, load_bytes: {}, start_time: {}, finish_time: {}.",
                                 backend.getHost(), streamLoadItem.getLabel(), streamLoadItem.getDb(), streamLoadItem.getTbl(), streamLoadItem.getUser(), streamLoadItem.getUserIp(),
@@ -116,11 +116,11 @@ public class StreamLoadRecordMgr extends MasterDaemon {
 
     public void replayFetchStreamLoadRecord(FetchStreamLoadRecord fetchStreamLoadRecord) {
         ImmutableMap<Long, Backend> backends = Catalog.getCurrentSystemInfo().getIdToBackend();
-
+        Map<Long, String> beIdToLastStreamLoad = fetchStreamLoadRecord.getBeIdToLastStreamLoad();
         for (Backend backend : backends.values()) {
-            String lastStreamLoadTime = fetchStreamLoadRecord.getBeIdToLastStreamLoad().get(backend.getId());
+            String lastStreamLoadTime = beIdToLastStreamLoad.get(backend.getId());
             if (lastStreamLoadTime != null) {
-                LOG.info("Replay bdbje. backend: {}, last stream load version: {}", backend.getHost(), lastStreamLoadTime);
+                LOG.info("Replay stream load bdbje. backend: {}, last stream load version: {}", backend.getHost(), lastStreamLoadTime);
                 backend.setLastStreamLoadTime(lastStreamLoadTime);
             }
         }
@@ -144,8 +144,11 @@ public class StreamLoadRecordMgr extends MasterDaemon {
         @Override
         public void write(DataOutput out) throws IOException {
             for (Map.Entry<Long, String> entry : beIdToLastStreamLoad.entrySet()) {
+                out.writeBoolean(true);
                 out.writeLong(entry.getKey());
+                out.writeBoolean(true);
                 Text.writeString(out, entry.getValue());
+                LOG.debug("Write stream load bdbje. key: {}, value: {} ", entry.getKey(), entry.getValue());
             }
         }
 
@@ -164,6 +167,7 @@ public class StreamLoadRecordMgr extends MasterDaemon {
                 if (beId != -1 && lastStreamLoad != null) {
                     idToLastStreamLoad.put(beId, lastStreamLoad);
                 }
+                LOG.debug("Read stream load bdbje. key: {}, value: {} ", beId, lastStreamLoad);
             }
             FetchStreamLoadRecord fetchStreamLoadRecord = new FetchStreamLoadRecord(idToLastStreamLoad);
             return fetchStreamLoadRecord;

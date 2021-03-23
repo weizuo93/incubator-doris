@@ -318,7 +318,8 @@ void BackendService::get_stream_load_record(TStreamLoadRecordResult& result, con
     auto stream_load_record = StorageEngine::instance()->get_stream_load_record();
     if (stream_load_record != nullptr) {
         std::map<std::string, std::string> records;
-        auto st = stream_load_record->get_batch(params, config::stream_load_record_batch_size, &records);
+//        auto st = stream_load_record->get_batch(params, config::stream_load_record_batch_size, &records);
+        auto st = stream_load_record->get_batch("", config::stream_load_record_batch_size, &records);
         if (st.ok()) {
             LOG(INFO) << "get_batch stream_load_record rocksdb successfully. records size: " << records.size();
             std::map<std::string, TStreamLoadRecord> stream_load_record_batch;
