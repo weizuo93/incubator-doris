@@ -88,8 +88,13 @@ public class StreamLoadRecordMgr extends MasterDaemon {
                             lastStreamLoadTime = entry.getKey();
                         }
                     }
-                    backend.setLastStreamLoadTime(lastStreamLoadTime);
-                    beIdToLastStreamLoad.put(backend.getId(), lastStreamLoadTime);
+                    if (streamLoadRecordBatch.size() > 0) {
+                        backend.setLastStreamLoadTime(lastStreamLoadTime);
+                        beIdToLastStreamLoad.put(backend.getId(), lastStreamLoadTime);
+                    } else {
+                        beIdToLastStreamLoad.put(backend.getId(), backend.getLastStreamLoadTime());
+                    }
+
                     ok = true;
                 } catch (Exception e) {
                     LOG.warn("task exec error. backend[{}]", backend.getId(), e);
@@ -102,8 +107,10 @@ public class StreamLoadRecordMgr extends MasterDaemon {
                 }
             }
             LOG.info("finished to pull stream load records of all backends. record size: {}, cost: {} ms", pullRecordSize, (System.currentTimeMillis() - start));
-            FetchStreamLoadRecord fetchStreamLoadRecord = new FetchStreamLoadRecord(beIdToLastStreamLoad);
-            Catalog.getCurrentCatalog().getEditLog().logFetchStreamLoadRecord(fetchStreamLoadRecord);
+            if (pullRecordSize > 0) {
+                FetchStreamLoadRecord fetchStreamLoadRecord = new FetchStreamLoadRecord(beIdToLastStreamLoad);
+                Catalog.getCurrentCatalog().getEditLog().logFetchStreamLoadRecord(fetchStreamLoadRecord);
+            }
 
             try {
                 TimeUnit.SECONDS.sleep(Config.fetch_stream_load_record_interval_second);
