@@ -98,7 +98,9 @@ Status StreamLoadRecord::get_batch(const std::string& start, const int batch_siz
     } else {
         it->Seek(start);
         rocksdb::Status status = it->status();
-        if (!status.ok()) {
+        if (status.ok()) {
+            it->Next();
+        } else {
             it->SeekToFirst();
         }
     }
@@ -108,7 +110,7 @@ Status StreamLoadRecord::get_batch(const std::string& start, const int batch_siz
         return Status::InternalError("Stream load record rocksdb seek failed");
     }
     int num = 0;
-    for (it->Next(); it->Valid(); it->Next()) {
+    for (; it->Valid(); it->Next()) {
         std::string key = it->key().ToString();
         std::string value = it->value().ToString();
         (*stream_load_records)[key] = value;
