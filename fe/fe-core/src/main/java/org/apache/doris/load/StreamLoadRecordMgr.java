@@ -19,7 +19,6 @@ package org.apache.doris.load;
 
 import org.apache.doris.catalog.Catalog;
 import org.apache.doris.common.ClientPool;
-import org.apache.doris.common.Config;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.MasterDaemon;
@@ -40,83 +39,77 @@ import com.google.common.collect.ImmutableMap;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 import java.util.Map;
 
 public class StreamLoadRecordMgr extends MasterDaemon {
     private static final Logger LOG = LogManager.getLogger(StreamLoadRecordMgr.class);
 
+    public StreamLoadRecordMgr(String name, long intervalMs) {
+            super(name, intervalMs);
+    }
+
     @Override
     protected void runAfterCatalogReady() {
         ImmutableMap<Long, Backend> backends = Catalog.getCurrentSystemInfo().getIdToBackend();
+        long start = System.currentTimeMillis();
+        int pullRecordSize = 0;
+        Map<Long, String> beIdToLastStreamLoad = Maps.newHashMap();
+        for (Backend backend : backends.values()) {
+            BackendService.Client client = null;
+            TNetworkAddress address = null;
+            boolean ok = false;
+            try {
+                address = new TNetworkAddress(backend.getHost(), backend.getBePort());
+                client = ClientPool.backendPool.borrowObject(address);
+                TStreamLoadRecordResult result = client.getStreamLoadRecord(backend.getLastStreamLoadTime());
+                Map<String, TStreamLoadRecord> streamLoadRecordBatch = result.getStreamLoadRecord();
+                pullRecordSize += streamLoadRecordBatch.size();
+                String lastStreamLoadTime = "";
+                for (Map.Entry<String, TStreamLoadRecord> entry : streamLoadRecordBatch.entrySet()) {
+                    TStreamLoadRecord streamLoadItem= entry.getValue();
+                    LOG.debug("receive stream load record info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
+                                    " status: {}, message: {}, error_url: {}, total_rows: {}, loaded_rows: {}, filtered_rows: {}," +
+                                    " unselected_rows: {}, load_bytes: {}, start_time: {}, finish_time: {}.",
+                            backend.getHost(), streamLoadItem.getLabel(), streamLoadItem.getDb(), streamLoadItem.getTbl(), streamLoadItem.getUser(), streamLoadItem.getUserIp(),
+                            streamLoadItem.getStatus(), streamLoadItem.getMessage(), streamLoadItem.getUrl(), streamLoadItem.getTotalRows(), streamLoadItem.getLoadedRows(),
+                            streamLoadItem.getFilteredRows(), streamLoadItem.getUnselectedRows(), streamLoadItem.getLoadBytes(), streamLoadItem.getStartTime(),
+                            streamLoadItem.getFinishTime());
 
-        while (true) {
-            long start = System.currentTimeMillis();
-            int pullRecordSize = 0;
-            Map<Long, String> beIdToLastStreamLoad = Maps.newHashMap();
-            for (Backend backend : backends.values()) {
-                BackendService.Client client = null;
-                TNetworkAddress address = null;
-                boolean ok = false;
-                try {
-                    address = new TNetworkAddress(backend.getHost(), backend.getBePort());
-                    client = ClientPool.backendPool.borrowObject(address);
-                    TStreamLoadRecordResult result = client.getStreamLoadRecord(backend.getLastStreamLoadTime());
-                    Map<String, TStreamLoadRecord> streamLoadRecordBatch = result.getStreamLoadRecord();
-                    pullRecordSize += streamLoadRecordBatch.size();
-                    String lastStreamLoadTime = "";
-                    for (Map.Entry<String, TStreamLoadRecord> entry : streamLoadRecordBatch.entrySet()) {
-                        TStreamLoadRecord streamLoadItem= entry.getValue();
-                        LOG.debug("receive stream load record info from backend: {}. label: {}, db: {}, tbl: {}, user: {}, user_ip: {}," +
-                                        " status: {}, message: {}, error_url: {}, total_rows: {}, loaded_rows: {}, filtered_rows: {}," +
-                                        " unselected_rows: {}, load_bytes: {}, start_time: {}, finish_time: {}.",
-                                backend.getHost(), streamLoadItem.getLabel(), streamLoadItem.getDb(), streamLoadItem.getTbl(), streamLoadItem.getUser(), streamLoadItem.getUserIp(),
-                                streamLoadItem.getStatus(), streamLoadItem.getMessage(), streamLoadItem.getUrl(), streamLoadItem.getTotalRows(), streamLoadItem.getLoadedRows(),
-                                streamLoadItem.getFilteredRows(), streamLoadItem.getUnselectedRows(), streamLoadItem.getLoadBytes(), streamLoadItem.getStartTime(),
-                                streamLoadItem.getFinishTime());
-
-                        AuditEvent auditEvent = new StreamLoadAuditEvent.AuditEventBuilder().setEventType(EventType.STREAM_LOAD_FINISH)
-                                .setLabel(streamLoadItem.getLabel()).setDb(streamLoadItem.getDb()).setTable(streamLoadItem.getTbl())
-                                .setUser(streamLoadItem.getUser()).setClientIp(streamLoadItem.getUserIp()).setStatus(streamLoadItem.getStatus())
-                                .setMessage(streamLoadItem.getMessage()).setUrl(streamLoadItem.getUrl()).setTotalRows(streamLoadItem.getTotalRows())
-                                .setLoadedRows( streamLoadItem.getLoadedRows()).setFilteredRows(streamLoadItem.getFilteredRows())
-                                .setUnselectedRows(streamLoadItem.getUnselectedRows()).setLoadBytes(streamLoadItem.getLoadBytes())
-                                .setStartTime(streamLoadItem.getStartTime()).setFinishTime(streamLoadItem.getFinishTime())
-                                .build();
-                        Catalog.getCurrentCatalog().getAuditEventProcessor().handleAuditEvent(auditEvent);
-                        if (entry.getKey().compareTo(lastStreamLoadTime) > 0) {
-                            lastStreamLoadTime = entry.getKey();
-                        }
-                    }
-                    if (streamLoadRecordBatch.size() > 0) {
-                        backend.setLastStreamLoadTime(lastStreamLoadTime);
-                        beIdToLastStreamLoad.put(backend.getId(), lastStreamLoadTime);
-                    } else {
-                        beIdToLastStreamLoad.put(backend.getId(), backend.getLastStreamLoadTime());
-                    }
-
-                    ok = true;
-                } catch (Exception e) {
-                    LOG.warn("task exec error. backend[{}]", backend.getId(), e);
-                } finally {
-                    if (ok) {
-                        ClientPool.backendPool.returnObject(address, client);
-                    } else {
-                        ClientPool.backendPool.invalidateObject(address, client);
+                    AuditEvent auditEvent = new StreamLoadAuditEvent.AuditEventBuilder().setEventType(EventType.STREAM_LOAD_FINISH)
+                            .setLabel(streamLoadItem.getLabel()).setDb(streamLoadItem.getDb()).setTable(streamLoadItem.getTbl())
+                            .setUser(streamLoadItem.getUser()).setClientIp(streamLoadItem.getUserIp()).setStatus(streamLoadItem.getStatus())
+                            .setMessage(streamLoadItem.getMessage()).setUrl(streamLoadItem.getUrl()).setTotalRows(streamLoadItem.getTotalRows())
+                            .setLoadedRows( streamLoadItem.getLoadedRows()).setFilteredRows(streamLoadItem.getFilteredRows())
+                            .setUnselectedRows(streamLoadItem.getUnselectedRows()).setLoadBytes(streamLoadItem.getLoadBytes())
+                            .setStartTime(streamLoadItem.getStartTime()).setFinishTime(streamLoadItem.getFinishTime())
+                            .build();
+                    Catalog.getCurrentCatalog().getAuditEventProcessor().handleAuditEvent(auditEvent);
+                    if (entry.getKey().compareTo(lastStreamLoadTime) > 0) {
+                        lastStreamLoadTime = entry.getKey();
                     }
                 }
-            }
-            LOG.info("finished to pull stream load records of all backends. record size: {}, cost: {} ms", pullRecordSize, (System.currentTimeMillis() - start));
-            if (pullRecordSize > 0) {
-                FetchStreamLoadRecord fetchStreamLoadRecord = new FetchStreamLoadRecord(beIdToLastStreamLoad);
-                Catalog.getCurrentCatalog().getEditLog().logFetchStreamLoadRecord(fetchStreamLoadRecord);
-            }
+                if (streamLoadRecordBatch.size() > 0) {
+                    backend.setLastStreamLoadTime(lastStreamLoadTime);
+                    beIdToLastStreamLoad.put(backend.getId(), lastStreamLoadTime);
+                } else {
+                    beIdToLastStreamLoad.put(backend.getId(), backend.getLastStreamLoadTime());
+                }
 
-            try {
-                TimeUnit.SECONDS.sleep(Config.fetch_stream_load_record_interval_second);
-            } catch (InterruptedException e1) {
-                // do nothing
+                ok = true;
+            } catch (Exception e) {
+                LOG.warn("task exec error. backend[{}]", backend.getId(), e);
+            } finally {
+                if (ok) {
+                    ClientPool.backendPool.returnObject(address, client);
+                } else {
+                    ClientPool.backendPool.invalidateObject(address, client);
+                }
             }
+        }
+        LOG.info("finished to pull stream load records of all backends. record size: {}, cost: {} ms", pullRecordSize, (System.currentTimeMillis() - start));
+        if (pullRecordSize > 0) {
+            FetchStreamLoadRecord fetchStreamLoadRecord = new FetchStreamLoadRecord(beIdToLastStreamLoad);
+            Catalog.getCurrentCatalog().getEditLog().logFetchStreamLoadRecord(fetchStreamLoadRecord);
         }
     }
 

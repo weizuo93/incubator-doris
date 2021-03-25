@@ -351,7 +351,7 @@ CONF_mBool(tablet_writer_ignore_eovercrowded, "false");
 // batch size of stream load record reported to FE
 CONF_mInt32(stream_load_record_batch_size, "50");
 // expire time of stream load record in rocksdb.
-CONF_mInt32(stream_load_record_expire_time_secs, "28800");
+CONF_Int32(stream_load_record_expire_time_secs, "28800");
 // time interval to clean expired stream load records
 CONF_mInt64(clean_stream_load_record_interval_secs, "1800");
 // the storage path of stream load record rocksdb
