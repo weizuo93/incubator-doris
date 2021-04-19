@@ -69,10 +69,11 @@ OLAPStatus ColumnData::init() {
     return res;
 }
 
+/*获取下一个row block*/
 OLAPStatus ColumnData::get_next_block(RowBlock** row_block) {
     SCOPED_RAW_TIMER(&_stats->block_fetch_ns);
     _is_normal_read = true;
-    auto res = _get_block(false);
+    auto res = _get_block(false); // 获取下一个row block，保存在成员变量_read_block中
     if (res != OLAP_SUCCESS) {
         if (res != OLAP_ERR_DATA_EOF) {
             LOG(WARNING) << "Get next block failed.";
@@ -80,41 +81,43 @@ OLAPStatus ColumnData::get_next_block(RowBlock** row_block) {
         *row_block = nullptr;
         return res;
     }
-    *row_block = _read_block.get();
+    *row_block = _read_block.get(); // 将获取到的row block的指针赋值给参数row_block
     return OLAP_SUCCESS;
 }
 
+/*从当前segment group对应的row block中读取一行数据*/
 OLAPStatus ColumnData::_next_row(const RowCursor** row, bool without_filter) {
-    _read_block->pos_inc();
+    _read_block->pos_inc(); // _read_block的位置指针后移一位，获取要读取的行位置
     do {
-        if (_read_block->has_remaining()) {
+        if (_read_block->has_remaining()) { // 判断当前的row block是否还有数据
             // 1. get one row for vectorized_row_batch
-            size_t pos = _read_block->pos();
-            _read_block->get_row(pos, &_cursor);
-            if (without_filter) {
-                *row = &_cursor;
+            size_t pos = _read_block->pos(); // 获取row block的当前位置
+            _read_block->get_row(pos, &_cursor); // 读取位置为pos的一行，通过参数_cursor返回
+            if (without_filter) { // 判断是否不需要进行数据过滤
+                *row = &_cursor; // 如果不需要进行数据过滤则直接将该行数据通过参数传出
                 return OLAP_SUCCESS;
             }
 
+            // 需要数据过滤
             // when without_filter is true, _include_blocks is nullptr
-            if (_read_block->block_status() == DEL_NOT_SATISFIED) {
-                *row = &_cursor;
+            if (_read_block->block_status() == DEL_NOT_SATISFIED) { // 判断当前block的删除状态是否为DEL_NOT_SATISFIED
+                *row = &_cursor; // 将该行数据通过参数传出
                 return OLAP_SUCCESS;
             } else {
-                DCHECK(_read_block->block_status() == DEL_PARTIAL_SATISFIED);
+                DCHECK(_read_block->block_status() == DEL_PARTIAL_SATISFIED); // 当前block的删除状态是否为DEL_PARTIAL_SATISFIED
                 bool row_del_filter = _delete_handler->is_filter_data(
-                    _segment_group->version().second, _cursor);
+                    _segment_group->version().second, _cursor); // 判断block中当前行是否被删除
                 if (!row_del_filter) {
-                    *row = &_cursor;
+                    *row = &_cursor; // block中当前行没有被删除，则将该行数据通过参数传出
                     return OLAP_SUCCESS;
                 }
                 // This row is filtered, continue to process next row
                 _stats->rows_del_filtered++;
-                _read_block->pos_inc();
+                _read_block->pos_inc(); // 当前行被删除过滤了，_read_block的位置指针后移一位，继续读取下一行
             }
-        } else {
+        } else { // 当前的row block中已经没有数据了
             // get_next_block
-            auto res = _get_block(without_filter);
+            auto res = _get_block(without_filter); // 获取下一个block
             if (res != OLAP_SUCCESS) {
                 return res;
             }
@@ -124,6 +127,7 @@ OLAPStatus ColumnData::_next_row(const RowCursor** row, bool without_filter) {
     return OLAP_SUCCESS;
 }
 
+/*寻找block的位置*/
 OLAPStatus ColumnData::_seek_to_block(const RowBlockPosition& block_pos, bool without_filter) {
     // TODO(zc): _segment_readers???
     // open segment reader if needed
@@ -133,20 +137,20 @@ OLAPStatus ColumnData::_seek_to_block(const RowBlockPosition& block_pos, bool wi
             _eof = true;
             return OLAP_ERR_DATA_EOF;
         }
-        SAFE_DELETE(_segment_reader);
+        SAFE_DELETE(_segment_reader); // 删除前一个segment的segment reader
         std::string file_name;
-        file_name = segment_group()->construct_data_file_path(block_pos.segment);
+        file_name = segment_group()->construct_data_file_path(block_pos.segment); // 获取当前segment的文件路径
         _segment_reader = new(std::nothrow) SegmentReader(
                 file_name, segment_group(),  block_pos.segment,
                 _seek_columns, _load_bf_columns, _conditions,
-                _delete_handler, _delete_status, _lru_cache, _runtime_state, _stats);
+                _delete_handler, _delete_status, _lru_cache, _runtime_state, _stats); // 针对当前segment创建segment reader
         if (_segment_reader == nullptr) {
             OLAP_LOG_WARNING("fail to malloc segment reader.");
             return OLAP_ERR_MALLOC_ERROR;
         }
 
-        _current_segment = block_pos.segment; 
-        auto res = _segment_reader->init(_is_using_cache);
+        _current_segment = block_pos.segment; // 记录当前的segment
+        auto res = _segment_reader->init(_is_using_cache); // 初始化创建的segment reader
         if (OLAP_SUCCESS != res) {
             OLAP_LOG_WARNING("fail to init segment reader. [res=%d]", res);
             return res;
@@ -155,14 +159,14 @@ OLAPStatus ColumnData::_seek_to_block(const RowBlockPosition& block_pos, bool wi
 
     uint32_t end_block;
     if (_end_key_is_set && block_pos.segment == _end_segment) {
-        end_block = _end_block;
+        end_block = _end_block; // 计算end block
     } else {
         end_block = _segment_reader->block_count() - 1;
     }
 
     VLOG(3) << "seek from " << block_pos.data_offset << " to " << end_block;
     return _segment_reader->seek_to_block(
-        block_pos.data_offset, end_block, without_filter, &_next_block, &_segment_eof);
+        block_pos.data_offset, end_block, without_filter, &_next_block, &_segment_eof); // 通过segment reader寻找block
 }
 
 OLAPStatus ColumnData::_find_position_by_short_key(
@@ -361,8 +365,8 @@ OLAPStatus ColumnData::prepare_block_read(
     _end_key_is_set = false;
     _is_normal_read = false;
     // set end position
-    if (end_key != nullptr) {
-        auto res = _seek_to_row(*end_key, find_end_key, true);
+    if (end_key != nullptr) { // 判断参数传入的end_key是否为空
+        auto res = _seek_to_row(*end_key, find_end_key, true); // 寻找参数传入的end key
         if (res == OLAP_SUCCESS) {
             // we find a
             _end_segment = _current_segment;
@@ -377,10 +381,10 @@ OLAPStatus ColumnData::prepare_block_read(
         // the end of this ColumnData
     }
     set_eof(false);
-    if (start_key != nullptr) {
-        auto res = _seek_to_row(*start_key, !find_start_key, false);
+    if (start_key != nullptr) { // 判断参数传入的start_key是否为空
+        auto res = _seek_to_row(*start_key, !find_start_key, false); // 寻找参数传入的start key
         if (res == OLAP_SUCCESS) {
-            *first_block = _read_block.get();
+            *first_block = _read_block.get(); // 获取第一个block
         } else if (res == OLAP_ERR_DATA_EOF) {
             _eof = true;
             *first_block = nullptr;
@@ -389,20 +393,20 @@ OLAPStatus ColumnData::prepare_block_read(
             LOG(WARNING) << "start_key can't be found.key=" << start_key->to_string();
             return res;
         }
-    } else {
+    } else { // 参数传入的start_key为空
         // This is used to 
         _is_normal_read = true;
 
         RowBlockPosition pos;
         pos.segment = 0u;
         pos.data_offset = 0u;
-        auto res = _seek_to_block(pos, false);
+        auto res = _seek_to_block(pos, false); // 寻找segment group中的第一个block
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "failed to seek to block in, res=" << res
                 << ", segment:" << pos.segment << ", block:" << pos.data_offset;
             return res;
         }
-        res = _get_block(false);
+        res = _get_block(false); // 获取block
         if (res != OLAP_SUCCESS) {
             LOG(WARNING) << "failed to get block in , res=" << res
                 << ", segment:" << pos.segment << ", block:" << pos.data_offset;
@@ -594,13 +598,14 @@ OLAPStatus ColumnData::schema_change_init() {
     return OLAP_SUCCESS;
 }
 
+/*读取一个batch的数据，通过参数vec_batch传回*/
 OLAPStatus ColumnData::_get_block_from_reader(
         VectorizedRowBatch** got_batch, bool without_filter, int rows_read) {
     VectorizedRowBatch* vec_batch = nullptr;
     if (_is_normal_read) {
-        vec_batch = _read_vector_batch.get();
+        vec_batch = _read_vector_batch.get(); // 获取成员变量_read_vector_batch的地址
     } else {
-        vec_batch = _seek_vector_batch.get();
+        vec_batch = _seek_vector_batch.get(); // 获取成员变量_seek_vector_batch的地址
     }
     // If this is normal read
     do {
@@ -612,7 +617,7 @@ OLAPStatus ColumnData::_get_block_from_reader(
             << ", _end_row_index:" << _end_row_index
             << ", _segment_eof:" << _segment_eof;
 #endif
-        vec_batch->clear();
+        vec_batch->clear(); // 清空 vec_batch
         if (rows_read > 0) {
             vec_batch->set_limit(rows_read);
         }
@@ -625,26 +630,26 @@ OLAPStatus ColumnData::_get_block_from_reader(
                           _current_segment == _end_segment)) {
             vec_batch->set_limit(_end_row_index);
             if (_end_row_index == 0) {
-                _segment_eof = true;
+                _segment_eof = true; // 当前segment结束
             }
         }
 
-        if (!_segment_eof) {
+        if (!_segment_eof) { // 当前segment没有结束
             _current_block = _next_block;
-            auto res = _segment_reader->get_block(vec_batch, &_next_block, &_segment_eof);
+            auto res = _segment_reader->get_block(vec_batch, &_next_block, &_segment_eof); // 通过segment reader获取一个block
             if (res != OLAP_SUCCESS) {
                 return res;
             }
             // Normal case
-            *got_batch = vec_batch;
+            *got_batch = vec_batch; // 将读到的batch数据指针赋值给参数got_batch
             return OLAP_SUCCESS;
         }
         // When this segment is read over, we reach here.
         // Seek to next segment
         RowBlockPosition block_pos;
-        block_pos.segment = _current_segment + 1;
+        block_pos.segment = _current_segment + 1; // 一个segment数据读取结束，读取下一个segment
         block_pos.data_offset = 0;
-        auto res = _seek_to_block(block_pos, without_filter);
+        auto res = _seek_to_block(block_pos, without_filter); // 寻找下一个segment的第一个block
         if (res != OLAP_SUCCESS) {
             return res;
         }
@@ -653,18 +658,19 @@ OLAPStatus ColumnData::_get_block_from_reader(
     return OLAP_SUCCESS;
 }
 
+/*获取row block*/
 OLAPStatus ColumnData::_get_block(bool without_filter, int rows_read) {
     do {
         VectorizedRowBatch* vec_batch = nullptr;
-        auto res = _get_block_from_reader(&vec_batch, without_filter, rows_read);
+        auto res = _get_block_from_reader(&vec_batch, without_filter, rows_read); // 通过segment reader读取一个batch的数据，通过参数vec_batch传回
         if (res != OLAP_SUCCESS) {
             return res;
         }
         // evaluate predicates
-        if (!without_filter && _need_eval_predicates) {
+        if (!without_filter && _need_eval_predicates) { // 判断是否需要进行数据过滤
             SCOPED_RAW_TIMER(&_stats->vec_cond_ns);
             size_t old_size = vec_batch->size();
-            for (auto pred : *_col_predicates) {
+            for (auto pred : *_col_predicates) { // 依次使用每一个列条件对batch数据进行判断过滤
                 pred->evaluate(vec_batch);
             }
             _stats->rows_vec_cond_filtered += old_size - vec_batch->size();
@@ -675,8 +681,8 @@ OLAPStatus ColumnData::_get_block(bool without_filter, int rows_read) {
         }
         SCOPED_RAW_TIMER(&_stats->block_convert_ns);
         // when reach here, we have already read a block successfully
-        _read_block->clear();
-        vec_batch->dump_to_row_block(_read_block.get());
+        _read_block->clear(); // 清空成员变量_read_block
+        vec_batch->dump_to_row_block(_read_block.get()); // 将vec_batch中的batch数据dump到_read_block中
         return OLAP_SUCCESS;
     } while (true);
     return OLAP_SUCCESS;

@@ -165,6 +165,7 @@ public class GlobalTransactionMgr implements Writable {
      * @note it is necessary to optimize the `lock` mechanism and `lock` scope resulting from wait lock long time
      * @note callers should get db.write lock before call this api
      */
+    /*通过DatabaseTransactionMgr提交事务*/
     public void commitTransaction(long dbId, long transactionId, List<TabletCommitInfo> tabletCommitInfos,
                                   TxnCommitAttachment txnCommitAttachment)
             throws UserException {
@@ -174,7 +175,7 @@ public class GlobalTransactionMgr implements Writable {
         
         LOG.debug("try to commit transaction: {}", transactionId);
         DatabaseTransactionMgr dbTransactionMgr = getDatabaseTransactionMgr(dbId);
-        dbTransactionMgr.commitTransaction(transactionId, tabletCommitInfos, txnCommitAttachment);
+        dbTransactionMgr.commitTransaction(transactionId, tabletCommitInfos, txnCommitAttachment); // 通过DatabaseTransactionMgr提交事务
     }
     
     public boolean commitAndPublishTransaction(Database db, long transactionId,
@@ -182,7 +183,8 @@ public class GlobalTransactionMgr implements Writable {
             throws UserException {
         return commitAndPublishTransaction(db, transactionId, tabletCommitInfos, timeoutMillis, null);
     }
-    
+
+    /*提交并publish事务,返回结果为publish是否完成，如果commit失败会抛出异常，只有成功commit才会执行publish*/
     public boolean commitAndPublishTransaction(Database db, long transactionId,
             List<TabletCommitInfo> tabletCommitInfos, long timeoutMillis,
             TxnCommitAttachment txnCommitAttachment)
@@ -191,12 +193,12 @@ public class GlobalTransactionMgr implements Writable {
             throw new UserException("get database write lock timeout, database=" + db.getFullName());
         }
         try {
-            commitTransaction(db.getId(), transactionId, tabletCommitInfos, txnCommitAttachment);
+            commitTransaction(db.getId(), transactionId, tabletCommitInfos, txnCommitAttachment); // 通过DatabaseTransactionMgr提交事务，如果commit失败会抛出异常
         } finally {
             db.writeUnlock();
         }
         DatabaseTransactionMgr dbTransactionMgr = getDatabaseTransactionMgr(db.getId());
-        return dbTransactionMgr.publishTransaction(db, transactionId, timeoutMillis);
+        return dbTransactionMgr.publishTransaction(db, transactionId, timeoutMillis); // 通过DatabaseTransactionMgr publish 事务,返回结果为publish是否完成
    }
 
     public void abortTransaction(long dbId, long transactionId, String reason) throws UserException {
@@ -218,10 +220,11 @@ public class GlobalTransactionMgr implements Writable {
      * get all txns which is ready to publish
      * a ready-to-publish txn's partition's visible version should be ONE less than txn's commit version.
      */
+    /*获取需要publish的transaction*/
     public List<TransactionState> getReadyToPublishTransactions() throws UserException {
         List<TransactionState> transactionStateList = Lists.newArrayList();
-        for (DatabaseTransactionMgr dbTransactionMgr : dbIdToDatabaseTransactionMgrs.values()) {
-            transactionStateList.addAll(dbTransactionMgr.getCommittedTxnList());
+        for (DatabaseTransactionMgr dbTransactionMgr : dbIdToDatabaseTransactionMgrs.values()) { // 依次遍历每一个DatabaseTransactionMgr
+            transactionStateList.addAll(dbTransactionMgr.getCommittedTxnList()); // 将当前DatabaseTransactionMgr下的所有已经commit的transaction添加到transactionStateList中
         }
         return transactionStateList;
     }

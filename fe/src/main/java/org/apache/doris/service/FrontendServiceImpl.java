@@ -627,6 +627,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         return result;
     }
 
+    /*stream load transaction begin*/
     @Override
     public TLoadTxnBeginResult loadTxnBegin(TLoadTxnBeginRequest request) throws TException {
         String clientAddr = getClientAddrAsString();
@@ -638,7 +639,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         TStatus status = new TStatus(TStatusCode.OK);
         result.setStatus(status);
         try {
-            result.setTxnId(loadTxnBeginImpl(request, clientAddr));
+            result.setTxnId(loadTxnBeginImpl(request, clientAddr)); // 处理RPC请求
         } catch (DuplicatedRequestException e) {
             // this is a duplicate request, just return previous txn id
             LOG.info("duplicate request for stream load. request id: {}, txn: {}", e.getDuplicatedRequestId(), e.getTxnId());
@@ -660,6 +661,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         return result;
     }
 
+    /*处理stream load transaction begin RPC请求*/
     private long loadTxnBeginImpl(TLoadTxnBeginRequest request, String clientIp) throws UserException {
         String cluster = request.getCluster();
         if (Strings.isNullOrEmpty(cluster)) {
@@ -667,7 +669,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         }
 
         checkPasswordAndPrivs(cluster, request.getUser(), request.getPasswd(), request.getDb(),
-                              request.getTbl(), request.getUser_ip(), PrivPredicate.LOAD);
+                              request.getTbl(), request.getUser_ip(), PrivPredicate.LOAD); // 权限检查，检查RPC参数中传来的用户信息是否对库表具有load权限
 
         // check label
         if (Strings.isNullOrEmpty(request.getLabel())) {
@@ -675,7 +677,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         }
         // check database
         Catalog catalog = Catalog.getCurrentCatalog();
-        String fullDbName = ClusterNamespace.getFullName(cluster, request.getDb());
+        String fullDbName = ClusterNamespace.getFullName(cluster, request.getDb()); // 获取db
         Database db = catalog.getDb(fullDbName);
         if (db == null) {
             String dbName = fullDbName;
@@ -705,6 +707,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
                 TransactionState.LoadJobSourceType.BACKEND_STREAMING, -1, timeoutSecond);
     }
 
+    /*stream load commit transaction*/
     @Override
     public TLoadTxnCommitResult loadTxnCommit(TLoadTxnCommitRequest request) throws TException {
         String clientAddr = getClientAddrAsString();
@@ -716,9 +719,9 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         TStatus status = new TStatus(TStatusCode.OK);
         result.setStatus(status);
         try {
-            if (!loadTxnCommitImpl(request)) {
+            if (!loadTxnCommitImpl(request)) { // 处理RPC请求
                 // committed success but not visible
-                status.setStatus_code(TStatusCode.PUBLISH_TIMEOUT);
+                status.setStatus_code(TStatusCode.PUBLISH_TIMEOUT); // transaction提交成功，但publish 超时
                 status.addToError_msgs("transaction commit successfully, BUT data will be visible later");
             }
         } catch (UserException e) {
@@ -760,7 +763,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             throw new UserException("unknown database, database=" + dbName);
         }
         long timeoutMs = request.isSetThrift_rpc_timeout_ms() ? request.getThrift_rpc_timeout_ms() : 5000;
-        boolean ret = Catalog.getCurrentGlobalTransactionMgr().commitAndPublishTransaction(
+        boolean ret = Catalog.getCurrentGlobalTransactionMgr().commitAndPublishTransaction( // 通过GlobalTransactionMgr commit并publish事务,如果commit失败会抛出异常，只有成功commit才会执行publish,返回结果为publish是否完成，
                         db, request.getTxnId(),
                         TabletCommitInfo.fromThrift(request.getCommitInfos()),
                         timeoutMs, TxnCommitAttachment.fromThrift(request.txnCommitAttachment));

@@ -98,7 +98,7 @@ OLAPStatus AlphaRowsetReader::init(RowsetReaderContext* read_context) {
 
 /*获取该rowset的下一个row block*/
 OLAPStatus AlphaRowsetReader::next_block(RowBlock** block) {
-    return (this->*_next_block)(block);
+    return (this->*_next_block)(block); // _merge_block(RowBlock** block)或_union_block(RowBlock** block)
 }
 
 /*获取当前rowset是否已被删除的标志*/
@@ -164,7 +164,7 @@ OLAPStatus AlphaRowsetReader::_merge_block(RowBlock** block) {
         VLOG(10) << "get merged row: " << row_cursor->to_string();
 
         _read_block->get_row(_read_block->pos(), _dst_cursor);   //  获取row block中pos位置的行数据指针_dst_cursor
-        copy_row(_dst_cursor, *row_cursor, _read_block->mem_pool()); // 将merge heap中指针row_cursor所指的行数据copy到row block中指针_dst_cursor所指的位置
+        copy_row(_dst_cursor, *row_cursor, _read_block->mem_pool()); // 将merge heap中指针row_cursor所指的行数据copy(深拷贝)到row block中指针_dst_cursor所指的位置
         _read_block->pos_inc(); // row block中pos增1
         num_rows_in_block++;
 
@@ -276,13 +276,14 @@ OLAPStatus AlphaRowsetReader::_pull_next_row_for_merge_rowset(RowCursor** row) {
     return OLAP_SUCCESS;
 }
 
+/*从merge_ctx对应的segment group中获取下一个row block（一个SegmentGroup对应一个ColumnData）*/
 OLAPStatus AlphaRowsetReader::_pull_next_block(AlphaMergeContext* merge_ctx) {
     OLAPStatus status = OLAP_SUCCESS;
-    if (OLAP_UNLIKELY(merge_ctx->first_read_symbol)) {
+    if (OLAP_UNLIKELY(merge_ctx->first_read_symbol)) { // 判断是否第一次读取该AlphaMergeContext对象对应的segment group
         if (_key_range_size > 0) {
-            status = _pull_first_block(merge_ctx);
+            status = _pull_first_block(merge_ctx); // 获取该AlphaMergeContext对象对应的segment group下的第一个row block
         } else {
-            status = merge_ctx->column_data->get_first_row_block(&(merge_ctx->row_block));
+            status = merge_ctx->column_data->get_first_row_block(&(merge_ctx->row_block)); // 获取该AlphaMergeContext对象对应的segment group下的第一个row block
             if (status != OLAP_SUCCESS && status != OLAP_ERR_DATA_EOF) {
                 LOG(WARNING) << "get first row block failed, status:" << status;
             }
@@ -291,7 +292,7 @@ OLAPStatus AlphaRowsetReader::_pull_next_block(AlphaMergeContext* merge_ctx) {
         return status;
     } else {
         // get next block
-        status = merge_ctx->column_data->get_next_block(&(merge_ctx->row_block));
+        status = merge_ctx->column_data->get_next_block(&(merge_ctx->row_block));// 获取该AlphaMergeContext对象对应的segment group下的下一个row block
         if (status == OLAP_ERR_DATA_EOF && _key_range_size > 0) {
             // reach the end of one predicate
             // currently, SegmentReader can only support filter one key range a time
@@ -302,6 +303,7 @@ OLAPStatus AlphaRowsetReader::_pull_next_block(AlphaMergeContext* merge_ctx) {
     return status;
 }
 
+/*获取该AlphaMergeContext对象对应的segment group下的第一个row block*/
 OLAPStatus AlphaRowsetReader::_pull_first_block(AlphaMergeContext* merge_ctx) {
     OLAPStatus status = OLAP_SUCCESS;
     merge_ctx->key_range_index++;
@@ -360,7 +362,7 @@ OLAPStatus AlphaRowsetReader::_init_merge_ctxs(RowsetReaderContext* read_context
             if (new_column_data->empty() && new_column_data->zero_num_rows()) {
                 continue;
             }
-        } else { // reader类型是不是READER_ALTER_TABLE
+        } else { // reader类型不是READER_ALTER_TABLE
             new_column_data->set_read_params(*read_context->return_columns,
                     *read_context->seek_columns,
                     *read_context->load_bf_columns,

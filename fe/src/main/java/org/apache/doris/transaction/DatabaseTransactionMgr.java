@@ -99,10 +99,10 @@ public class DatabaseTransactionMgr {
     private ReentrantReadWriteLock transactionLock = new ReentrantReadWriteLock(true);
 
     // transactionId -> running TransactionState
-    private Map<Long, TransactionState> idToRunningTransactionState = Maps.newHashMap();
+    private Map<Long, TransactionState> idToRunningTransactionState = Maps.newHashMap(); // txn id到txn状态的对应关系，保存正在执行的txn
 
     // transactionId -> final status TransactionState
-    private Map<Long, TransactionState> idToFinalStatusTransactionState = Maps.newHashMap();
+    private Map<Long, TransactionState> idToFinalStatusTransactionState = Maps.newHashMap(); // txn id到txn状态的对应关系，保存已经结束的txn
 
 
     // to store transtactionStates with final status
@@ -114,7 +114,7 @@ public class DatabaseTransactionMgr {
     // this member should be consistent with idToTransactionState,
     // which means if a txn exist in idToRunningTransactionState or idToFinalStatusTransactionState
     // it must exists in dbIdToTxnLabels, and vice versa
-    private Map<String, Set<Long>> labelToTxnIds = Maps.newHashMap();
+    private Map<String, Set<Long>> labelToTxnIds = Maps.newHashMap(); // 保存label到txn id的对应关系，用来检查label是否已经存在
 
 
     // count the number of running txns of database, except for the routine load txn
@@ -172,15 +172,17 @@ public class DatabaseTransactionMgr {
         }
     }
 
+    /*根据参数传入的txn id获取txn的状态*/
     private TransactionState unprotectedGetTransactionState(Long transactionId) {
-        TransactionState transactionState = idToRunningTransactionState.get(transactionId);
+        TransactionState transactionState = idToRunningTransactionState.get(transactionId); // 在正在执行的txn中寻找参数对应的txn
         if (transactionState != null) {
             return transactionState;
         } else {
-            return idToFinalStatusTransactionState.get(transactionId);
+            return idToFinalStatusTransactionState.get(transactionId); // 在已经结束的txn中寻找参数对应的txn
         }
     }
 
+    /*获取label对应的txn id*/
     @VisibleForTesting
     protected Set<Long> unprotectedGetTxnIdsByLabel(String label) {
         return labelToTxnIds.get(label);
@@ -260,13 +262,13 @@ public class DatabaseTransactionMgr {
              *    existing txn id.
              * 3. if there is a non-aborted transaction, throw label already used exception.
              */
-            Set<Long> existingTxnIds = unprotectedGetTxnIdsByLabel(label);
-            if (existingTxnIds != null && !existingTxnIds.isEmpty()) {
+            Set<Long> existingTxnIds = unprotectedGetTxnIdsByLabel(label); // 获取label对应的txn id
+            if (existingTxnIds != null && !existingTxnIds.isEmpty()) { // 判断label是否已经存在
                 List<TransactionState> notAbortedTxns = Lists.newArrayList();
-                for (long txnId : existingTxnIds) {
-                    TransactionState txn = unprotectedGetTransactionState(txnId);
+                for (long txnId : existingTxnIds) { // 依次遍历当前label对应的每一个txn
+                    TransactionState txn = unprotectedGetTransactionState(txnId); // 获取当前txn的状态
                     Preconditions.checkNotNull(txn);
-                    if (txn.getTransactionStatus() != TransactionStatus.ABORTED) {
+                    if (txn.getTransactionStatus() != TransactionStatus.ABORTED) { // txn的状态分为：PREPARE、COMMITTED、VISIBLE、ABORTED
                         notAbortedTxns.add(txn);
                     }
                 }
@@ -278,9 +280,9 @@ public class DatabaseTransactionMgr {
                             && notAbortedTxn.getRequsetId() != null && notAbortedTxn.getRequsetId().equals(requestId)) {
                         // this may be a retry request for same job, just return existing txn id.
                         throw new DuplicatedRequestException(DebugUtil.printId(requestId),
-                                notAbortedTxn.getTransactionId(), "");
+                                notAbortedTxn.getTransactionId(), ""); // label对应的txn已经存在并且状态为prepare，抛出异常，本次load可能是retry
                     }
-                    throw new LabelAlreadyUsedException(label, notAbortedTxn.getTransactionStatus());
+                    throw new LabelAlreadyUsedException(label, notAbortedTxn.getTransactionStatus()); // label已经存在，抛出异常
                 }
             }
 
@@ -289,8 +291,8 @@ public class DatabaseTransactionMgr {
             long tid = idGenerator.getNextTransactionId(); // 创建transaction id
             LOG.info("begin transaction: txn id {} with label {} from coordinator {}", tid, label, coordinator);
             TransactionState transactionState = new TransactionState(dbId, tableIdList, tid, label, requestId, sourceType,
-                    coordinator, listenerId, timeoutSecond * 1000);
-            transactionState.setPrepareTime(System.currentTimeMillis());
+                    coordinator, listenerId, timeoutSecond * 1000); // 创建TransactionState对象，将txn的状态初始化为prepare
+            transactionState.setPrepareTime(System.currentTimeMillis()); // 设置当前时刻为txn进入prepare状态的时间
             unprotectUpsertTransactionState(transactionState, false);
 
             if (MetricRepo.isInit.get()) {
@@ -333,21 +335,21 @@ public class DatabaseTransactionMgr {
         TransactionState transactionState = null;
         readLock();
         try {
-            transactionState = unprotectedGetTransactionState(transactionId);
+            transactionState = unprotectedGetTransactionState(transactionId); // 根据txn id获取TransactionState对象
         } finally {
             readUnlock();
         }
         if (transactionState == null
-                || transactionState.getTransactionStatus() == TransactionStatus.ABORTED) {
+                || transactionState.getTransactionStatus() == TransactionStatus.ABORTED) { // 如果TransactionState对象不存在或txn状态为ABORTED，则抛出异常
             throw new TransactionCommitFailedException(
                     transactionState == null ? "transaction not found" : transactionState.getReason());
         }
 
-        if (transactionState.getTransactionStatus() == TransactionStatus.VISIBLE) {
+        if (transactionState.getTransactionStatus() == TransactionStatus.VISIBLE) { // 如果txn的状态已经为VISIBLE，则直接返回
             LOG.debug("transaction is already visible: {}", transactionId);
             return;
         }
-        if (transactionState.getTransactionStatus() == TransactionStatus.COMMITTED) {
+        if (transactionState.getTransactionStatus() == TransactionStatus.COMMITTED) { // 如果txn的状态已经为COMMITTED，则直接返回
             LOG.debug("transaction is already committed: {}", transactionId);
             return;
         }
@@ -370,11 +372,11 @@ public class DatabaseTransactionMgr {
         // if table or partition is dropped during load, just ignore that tablet,
         // because we should allow dropping rollup or partition during load
         List<Long> tabletIds = tabletCommitInfos.stream().map(
-                tabletCommitInfo -> tabletCommitInfo.getTabletId()).collect(Collectors.toList());
-        List<TabletMeta> tabletMetaList = tabletInvertedIndex.getTabletMetaList(tabletIds);
-        for (int i = 0; i < tabletMetaList.size(); i++) {
-            TabletMeta tabletMeta = tabletMetaList.get(i);
-            if (tabletMeta == TabletInvertedIndex.NOT_EXIST_TABLET_META) {
+                tabletCommitInfo -> tabletCommitInfo.getTabletId()).collect(Collectors.toList()); // 获取load涉及的tablet
+        List<TabletMeta> tabletMetaList = tabletInvertedIndex.getTabletMetaList(tabletIds); // 获取load涉及的tablet的meta数据
+        for (int i = 0; i < tabletMetaList.size(); i++) { // 依次遍历每一个tablet meta
+            TabletMeta tabletMeta = tabletMetaList.get(i); // 获取tablet meta
+            if (tabletMeta == TabletInvertedIndex.NOT_EXIST_TABLET_META) { // 判断tablet meta是否存在，在load过程中table或partition有可能被删除了，则忽略这些tablet
                 continue;
             }
             long tabletId = tabletIds.get(i);
@@ -415,12 +417,12 @@ public class DatabaseTransactionMgr {
 
         Set<Long> errorReplicaIds = Sets.newHashSet();
         Set<Long> totalInvolvedBackends = Sets.newHashSet();
-        for (long tableId : tableToPartition.keySet()) {
+        for (long tableId : tableToPartition.keySet()) { // 依次遍历每一个table
             OlapTable table = (OlapTable) db.getTable(tableId);
             if (table == null) {
                 throw new MetaNotFoundException("Table does not exist: " + tableId);
             }
-            for (Partition partition : table.getAllPartitions()) {
+            for (Partition partition : table.getAllPartitions()) { // 依次遍历table下的每一个partition
                 if (!tableToPartition.get(tableId).contains(partition.getId())) {
                     continue;
                 }
@@ -525,11 +527,12 @@ public class DatabaseTransactionMgr {
         LOG.info("transaction:[{}] successfully committed", transactionState);
     }
 
+    /*publish transaction，会有单独的线程对已经commit的transaction执行publish操作，本函数只是等待publish完成*/
     public boolean publishTransaction(Database db, long transactionId, long timeoutMillis) throws TransactionCommitFailedException {
         TransactionState transactionState = null;
         readLock();
         try {
-            transactionState = unprotectedGetTransactionState(transactionId);
+            transactionState = unprotectedGetTransactionState(transactionId); // 获取txn的状态
         } finally {
             readUnlock();
         }
@@ -543,17 +546,17 @@ public class DatabaseTransactionMgr {
                 throw new TransactionCommitFailedException("transaction commit failed");
         }
 
-        long currentTimeMillis = System.currentTimeMillis();
-        long timeoutTimeMillis = currentTimeMillis + timeoutMillis;
+        long currentTimeMillis = System.currentTimeMillis(); // 获取当前时间
+        long timeoutTimeMillis = currentTimeMillis + timeoutMillis; // 计算publish超时时刻
         while (currentTimeMillis < timeoutTimeMillis &&
-                transactionState.getTransactionStatus() == TransactionStatus.COMMITTED) {
+                transactionState.getTransactionStatus() == TransactionStatus.COMMITTED) { // 等待publish超时，或txn状态改变
             try {
-                transactionState.waitTransactionVisible(timeoutMillis);
+                transactionState.waitTransactionVisible(timeoutMillis); // 等待publish超时
             } catch (InterruptedException e) {
             }
-            currentTimeMillis = System.currentTimeMillis();
+            currentTimeMillis = System.currentTimeMillis(); // 获取当前时间
         }
-        return transactionState.getTransactionStatus() == TransactionStatus.VISIBLE;
+        return transactionState.getTransactionStatus() == TransactionStatus.VISIBLE; // 如果txn状态为VISIBLE，则publish完成，否则publish超时
     }
 
     public void deleteTransaction(TransactionState transactionState) {
@@ -586,6 +589,7 @@ public class DatabaseTransactionMgr {
         }
     }
 
+    /*获取当前DatabaseTransactionMgr下的所有已经commit的transaction，并且按照提交时间排好序*/
     public List<TransactionState> getCommittedTxnList() {
         readLock();
         try {
@@ -819,7 +823,7 @@ public class DatabaseTransactionMgr {
             }
         }
         if (!transactionState.getTransactionStatus().isFinalStatus()) {
-            if (idToRunningTransactionState.put(transactionState.getTransactionId(), transactionState) == null) {
+            if (idToRunningTransactionState.put(transactionState.getTransactionId(), transactionState) == null) { // 将当前txn添加到idToRunningTransactionState中
                 if (transactionState.getSourceType() == TransactionState.LoadJobSourceType.ROUTINE_LOAD_TASK) {
                     runningRoutineLoadTxnNums++;
                 } else {
