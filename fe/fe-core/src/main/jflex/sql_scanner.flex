@@ -345,6 +345,7 @@ import org.apache.doris.qe.SqlModeHelper;
         keywordMap.put("stop", new Integer(SqlParserSymbols.KW_STOP));
         keywordMap.put("storage", new Integer(SqlParserSymbols.KW_STORAGE));
         keywordMap.put("string", new Integer(SqlParserSymbols.KW_STRING));
+        keywordMap.put("stream_load", new Integer(SqlParserSymbols.KW_STREAM_LOAD));
         keywordMap.put("sum", new Integer(SqlParserSymbols.KW_SUM));
         keywordMap.put("superuser", new Integer(SqlParserSymbols.KW_SUPERUSER));
         keywordMap.put("sync", new Integer(SqlParserSymbols.KW_SYNC));
