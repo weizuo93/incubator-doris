@@ -40,7 +40,7 @@ import java.util.List;
 // SHOW STREAM LOAD STATUS statement used to get record of stream load job.
 //
 // syntax:
-//      SHOW STREAM_LOAD [FROM db] [LIKE mask]
+//      SHOW STREAM LOAD [FROM db] [LIKE mask]
 public class ShowStreamLoadStmt extends ShowStmt {
     private static final Logger LOG = LogManager.getLogger(ShowStreamLoadStmt.class);
 
@@ -262,7 +262,7 @@ public class ShowStreamLoadStmt extends ShowStmt {
     @Override
     public String toSql() {
         StringBuilder sb = new StringBuilder();
-        sb.append("SHOW STREAM_LOAD ");
+        sb.append("SHOW STREAM LOAD ");
         if (!Strings.isNullOrEmpty(dbName)) {
             sb.append("FROM `").append(dbName).append("`");
         }

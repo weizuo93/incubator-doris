@@ -1,6 +1,6 @@
 ---
 {
-    "title": "SHOW STREAM_LOAD",
+    "title": "SHOW STREAM LOAD",
     "language": "zh-CN"
 }
 ---
@@ -24,11 +24,11 @@ specific language governing permissions and limitations
 under the License.
 -->
 
-# SHOW STREAM_LOAD
+# SHOW STREAM LOAD
 ## description
     该语句用于展示指定的Stream Load任务的执行情况
     语法：
-        SHOW STREAM_LOAD
+        SHOW STREAM LOAD
         [FROM db_name]
         [
             WHERE 
@@ -49,21 +49,21 @@ under the License.
 
 ## example
     1. 展示默认 db 的所有Stream Load任务
-        SHOW STREAM_LOAD;
+        SHOW STREAM LOAD;
     
     2. 展示指定 db 的Stream Load任务，label 中包含字符串 "2014_01_02"，展示最老的10个
-        SHOW STREAM_LOAD FROM example_db WHERE LABEL LIKE "2014_01_02" LIMIT 10;
+        SHOW STREAM LOAD FROM example_db WHERE LABEL LIKE "2014_01_02" LIMIT 10;
         
     3. 展示指定 db 的Stream Load任务，指定 label 为 "load_example_db_20140102"
-        SHOW STREAM_LOAD FROM example_db WHERE LABEL = "load_example_db_20140102";
+        SHOW STREAM LOAD FROM example_db WHERE LABEL = "load_example_db_20140102";
         
     4. 展示指定 db 的Stream Load任务，指定 status 为 "success", 并按 LoadStartTime 降序排序
-        SHOW STREAM_LOAD FROM example_db WHERE STATUS = "success" ORDER BY LoadStartTime DESC;
+        SHOW STREAM LOAD FROM example_db WHERE STATUS = "success" ORDER BY LoadStartTime DESC;
         
     5. 展示指定 db 的导入任务 并按 LoadStartTime 降序排序,并从偏移量5开始显示10条查询结果
-        SHOW STREAM_LOAD FROM example_db ORDER BY LoadStartTime DESC limit 5,10;
-        SHOW STREAM_LOAD FROM example_db ORDER BY LoadStartTime DESC limit 10 offset 5;
+        SHOW STREAM LOAD FROM example_db ORDER BY LoadStartTime DESC limit 5,10;
+        SHOW STREAM LOAD FROM example_db ORDER BY LoadStartTime DESC limit 10 offset 5;
 
 ## keyword
-    SHOW,STREAM_LOAD
+    SHOW,STREAM LOAD
 

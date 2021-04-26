@@ -1,6 +1,6 @@
 ---
 {
-    "title": "SHOW STREAM_LOAD",
+    "title": "SHOW STREAM LOAD",
     "language": "en"
 }
 ---
@@ -24,11 +24,11 @@ specific language governing permissions and limitations
 under the License.
 -->
 
-# SHOW STREAM_LOAD
+# SHOW STREAM LOAD
 ## Description
 This statement is used to show the execution of the specified import task
 Grammar:
-SHOW STREAM_LOAD
+SHOW STREAM LOAD
 [FROM both names]
 [
 WHERE
@@ -49,20 +49,20 @@ Explain:
 
 ## example
 1. Show all STREAM LOAD tasks of default DB
-SHOW STREAM_LOAD;
+SHOW STREAM LOAD;
 
 2. Show the STREAM LOAD task of the specified db. The label contains the string "2014_01_02", showing the oldest 10
-SHOW STREAM_LOAD FROM example_db WHERE LABEL LIKE "2014_01_02" LIMIT 10;
+SHOW STREAM LOAD FROM example_db WHERE LABEL LIKE "2014_01_02" LIMIT 10;
 
 3. Show the STREAM LOAD task of the specified db, specify label as "load_example_db_20140102"
-SHOW STREAM_LOAD FROM example_db WHERE LABEL = "load_example_db_20140102";
+SHOW STREAM LOAD FROM example_db WHERE LABEL = "load_example_db_20140102";
 
 4. Show the STREAM LOAD task of the specified db, specify status as "success", and sort it in descending order by LoadStartTime
-SHOW STREAM_LOAD FROM example_db WHERE STATUS = "success" ORDER BY LoadStartTime DESC;
+SHOW STREAM LOAD FROM example_db WHERE STATUS = "success" ORDER BY LoadStartTime DESC;
 
 5. Show the STREAM LOAD task of the specified dB and sort it in descending order by LoadStartTime, and display 10 query results starting with offset 5
-SHOW STREAM_LOAD FROM example_db ORDER BY LoadStartTime DESC limit 5,10;
-SHOW STREAM_LOAD FROM example_db ORDER BY LoadStartTime DESC limit 10 offset 5;
+SHOW STREAM LOAD FROM example_db ORDER BY LoadStartTime DESC limit 5,10;
+SHOW STREAM LOAD FROM example_db ORDER BY LoadStartTime DESC limit 10 offset 5;
 
 ## keyword
-SHOW,STREAM_LOAD
+SHOW,STREAM LOAD
