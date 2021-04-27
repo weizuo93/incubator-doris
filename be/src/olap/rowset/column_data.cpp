@@ -127,7 +127,7 @@ OLAPStatus ColumnData::_next_row(const RowCursor** row, bool without_filter) {
     return OLAP_SUCCESS;
 }
 
-/*寻找block的位置*/
+/*按照参数block_pos传入的位置寻找block*/
 OLAPStatus ColumnData::_seek_to_block(const RowBlockPosition& block_pos, bool without_filter) {
     // TODO(zc): _segment_readers???
     // open segment reader if needed
@@ -457,6 +457,7 @@ void ColumnData::set_read_params(
     _read_block->init(block_info);
 }
 
+/*获取第一个row block*/
 OLAPStatus ColumnData::get_first_row_block(RowBlock** row_block) {
     DCHECK(!_end_key_is_set) << "end key is set while use block interface.";
     _is_normal_read = true;
@@ -464,7 +465,7 @@ OLAPStatus ColumnData::get_first_row_block(RowBlock** row_block) {
 
     // to be same with OLAPData, we use segment_group.
     RowBlockPosition block_pos;
-    OLAPStatus res = segment_group()->find_first_row_block(&block_pos);
+    OLAPStatus res = segment_group()->find_first_row_block(&block_pos); // 寻找当前ColumnData对应的SegmentGroup中第一个block的位置，通过参数block_pos返回
     if (res != OLAP_SUCCESS) {
         if (res == OLAP_ERR_INDEX_EOF) {
             *row_block = nullptr;
@@ -475,7 +476,7 @@ OLAPStatus ColumnData::get_first_row_block(RowBlock** row_block) {
         return res;
     }
 
-    res = _seek_to_block(block_pos, false);
+    res = _seek_to_block(block_pos, false); // 按照参数block_pos传入的block位置，寻找block
     if (res != OLAP_SUCCESS) {
         if (res != OLAP_ERR_DATA_EOF) {
             OLAP_LOG_WARNING("seek to block fail. [res=%d]", res);
@@ -484,7 +485,7 @@ OLAPStatus ColumnData::get_first_row_block(RowBlock** row_block) {
         return res;
     }
 
-    res = _get_block(false);
+    res = _get_block(false); // 获取row block，保存在成员变量_read_block中
     if (res != OLAP_SUCCESS) {
         if (res != OLAP_ERR_DATA_EOF) {
             LOG(WARNING) << "fail to load data to row block. res=" << res
@@ -495,7 +496,7 @@ OLAPStatus ColumnData::get_first_row_block(RowBlock** row_block) {
         return res;
     }
 
-    *row_block = _read_block.get();
+    *row_block = _read_block.get(); // 将获取到的row block赋值给返回参数row_block
     return OLAP_SUCCESS;
 }
 

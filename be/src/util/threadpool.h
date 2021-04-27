@@ -320,7 +320,7 @@ private:
     boost::intrusive::list<IdleThread> _idle_threads; // NOLINT(build/include_what_you_use)
 
     // ExecutionMode::CONCURRENT token used by the pool for tokenless submission.
-    std::unique_ptr<ThreadPoolToken> _tokenless;
+    std::unique_ptr<ThreadPoolToken> _tokenless; // ThreadPool对象会有一个默认的ThreadPoolToken对象_tokenless，没有通过ThreadPoolToken对象提交的任务(直接通过ThreadPool对象提交)都会通过_tokenless来管理
 
     DISALLOW_COPY_AND_ASSIGN(ThreadPool);
 };
