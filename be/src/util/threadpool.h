@@ -245,7 +245,7 @@ private:
     // Overall status of the pool. Set to an error when the pool is shut down.
     //
     // Protected by '_lock'.
-    Status _pool_status;
+    Status _pool_status; // 线程池状态
 
     // Synchronizes many of the members of the pool and all of its
     // condition variables.
@@ -257,46 +257,51 @@ private:
 
     // Condition variable for "pool has no threads". Waiters wake up when
     // _num_threads and num_pending_threads_ are both 0.
+    // 线程池执行shutdown时，通过该条件变量使shutdown过程阻塞（wait()），直到线程池中线程数为0时（_num_threads + _num_threads_pending_start == 0）唤醒shutdown过程
     ConditionVariable _no_threads_cond;
 
     // Number of threads currently running.
     //
     // Protected by _lock.
-    int _num_threads; //当前正在运行的线程数(inactive_threads + _active_threads = _num_threads + _num_threads_pending_start)
+    //当前存活的线程数(包含正在休眠的线程数，线程创建成功并执行dispatch_thread,该成员变量值加1，线程被回收时，该成员变量会减1）
+    int _num_threads;
 
     // Number of threads which are in the process of starting.
     // When these threads start, they will decrement this counter and
     // accordingly increment '_num_threads'.
     //
     // Protected by _lock.
+    // 准备要创建新的线程，但是还没有开始创建的线程数。任务提交成功并需要创建新的线程时，该成员变量值加1，当线程创建成功，执行dispatch_thread()时，或线程创建失败时，该成员变量会减1。
     int _num_threads_pending_start;
 
     // Number of threads currently running and executing client tasks.
     //
     // Protected by _lock.
-    int _active_threads; //当前正在执行任务的线程数
+    //当前正在执行任务的线程数(task从任务队列中出队并开始执行，该成员变量值加1，任务执行结束，该成员变量值减1)
+    int _active_threads;
 
     // Total number of client tasks queued, either directly (_queue) or
     // indirectly (_tokens).
     //
     // Protected by _lock.
-    int _total_queued_tasks; //当前任务队列中的任务数
+    int _total_queued_tasks; //线程池任务队列中的任务数（任务提交成功，该成员变量值加1，任务出队并开始执行，该成员变量减1）
 
     // All allocated tokens.
     //
     // Protected by _lock.
-    std::unordered_set<ThreadPoolToken*> _tokens;
+    std::unordered_set<ThreadPoolToken*> _tokens; //管理当前线程池下的所有ThreadPoolToken对象（通过ThreadPool对象创建ThreadPoolToken对象成功，将创建的token添加到该成员变量，析构ThreadPoolToken对象时，token被释放，从该成员变量中删除token）
 
     // FIFO of tokens from which tasks should be executed. Does not own the
     // tokens; they are owned by clients and are removed from the FIFO on shutdown.
     //
     // Protected by _lock.
-    std::deque<ThreadPoolToken*> _queue; //保存当前线程池下的所有ThreadPoolToken对象
+    std::deque<ThreadPoolToken*> _queue;         //管理提交给当前线程池的任务所对应的ThreadPoolToken对象
 
     // Pointers to all running threads. Raw pointers are safe because a Thread
     // may only go out of scope after being removed from _threads.
     //
     // Protected by _lock.
+    //管理当前存活的线程(包含正在休眠的线程，线程创建成功并执行dispatch_thread,将线程添加到该成员变量，线程被回收时，将线程从该成员变量中移除）
     std::unordered_set<Thread*> _threads;
 
     // List of all threads currently waiting for work.
@@ -320,7 +325,8 @@ private:
     boost::intrusive::list<IdleThread> _idle_threads; // NOLINT(build/include_what_you_use)
 
     // ExecutionMode::CONCURRENT token used by the pool for tokenless submission.
-    std::unique_ptr<ThreadPoolToken> _tokenless; // ThreadPool对象会有一个默认的ThreadPoolToken对象_tokenless，没有通过ThreadPoolToken对象提交的任务(直接通过ThreadPool对象提交)都会通过_tokenless来管理
+    // ThreadPool对象会有一个默认的ThreadPoolToken对象_tokenless，没有通过ThreadPoolToken对象提交的任务(直接通过ThreadPool对象提交)都会通过_tokenless来管理
+    std::unique_ptr<ThreadPoolToken> _tokenless;
 
     DISALLOW_COPY_AND_ASSIGN(ThreadPool);
 };
