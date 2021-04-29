@@ -27,6 +27,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "common/atomic.h"
 #include "common/status.h"
 #include "gutil/ref_counted.h"
 #include "util/condition_variable.h"
@@ -199,6 +200,16 @@ public:
         return _num_threads + _num_threads_pending_start;
     }
 
+    int max_threads() { return _max_threads; }
+    Status set_max_threads(int max_threads);
+    int min_threads() { return _min_threads; }
+    Status set_min_threads(int min_threads);
+
+    int num_threads() { return _num_threads; }
+    int num_threads_pending_start() { return _num_threads_pending_start; }
+    int num_active_threads() { return _active_threads; }
+    int num_total_queued_tasks() { return _total_queued_tasks; }
+
 private:
     friend class ThreadPoolBuilder;
     friend class ThreadPoolToken;
@@ -236,8 +247,8 @@ private:
     void release_token(ThreadPoolToken* t);
 
     const std::string _name;
-    const int _min_threads;
-    const int _max_threads;
+    AtomicInt32 _min_threads;
+    AtomicInt32 _max_threads;
     const int _max_queue_size;
     const MonoDelta _idle_timeout;
 
@@ -268,7 +279,7 @@ private:
     // accordingly increment '_num_threads'.
     //
     // Protected by _lock.
-    int _num_threads_pending_start;
+    AtomicInt32 _num_threads_pending_start;
 
     // Number of threads currently running and executing client tasks.
     //
