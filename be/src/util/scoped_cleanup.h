@@ -32,7 +32,7 @@
 // NOTE: in the case that you want to cancel the cleanup, use the more verbose
 // (non-macro) form below.
 #define SCOPED_CLEANUP(func_body) \
-  auto VARNAME_LINENUM(scoped_cleanup) = MakeScopedCleanup([&] { func_body });
+  auto VARNAME_LINENUM(scoped_cleanup) = MakeScopedCleanup([&] { func_body }); // 创建ScopedCleanup对象
 
 namespace doris {
 
@@ -47,7 +47,7 @@ public:
         : cancelled_(false),
         f_(std::move(f)) {
         }
-    ~ScopedCleanup() {
+    ~ScopedCleanup() { // 析构当前ScopedCleanup对象时，会执行函数f_()
         if (!cancelled_) {
             f_();
         }

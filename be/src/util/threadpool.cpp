@@ -542,10 +542,10 @@ void ThreadPool::dispatch_thread() {
                 // For some wake ups (i.e. shutdown or do_submit) this thread is
                 // guaranteed to be unlinked after being awakened. In others (i.e.
                 // spurious wake-up or Wait timeout), it'll still be linked.
-                if (me.is_linked()) {
+                if (me.is_linked()) { // 判断当前线程是否在list中被链接（是否在成员变量_idle_threads中）
                     _idle_threads.erase(_idle_threads.iterator_to(me)); // 从成员变量_idle_threads中删除当前线程
                 }
-            });
+            }); // SCOPED_CLEANUP()会使用其中的代码块创建ScopedCleanup对象，析构ScopedCleanup对象（对象生命周期结束）时，会执行其中的代码块
             if (permanent) { // 判断当前线程是否需要在线程池中长久保存
                 me.not_empty.wait(); // 线程休眠，直到有新任务提交给等待队列而被唤醒
             } else {
