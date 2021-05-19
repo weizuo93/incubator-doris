@@ -205,7 +205,6 @@ public:
     int min_threads() { return _min_threads; }
     Status set_min_threads(int min_threads);
 
-    int num_threads() { return _num_threads; }
     int num_threads_pending_start() { return _num_threads_pending_start; }
     int num_active_threads() { return _active_threads; }
     int num_total_queued_tasks() { return _total_queued_tasks; }
