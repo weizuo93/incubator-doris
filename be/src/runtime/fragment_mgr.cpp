@@ -449,11 +449,11 @@ Status FragmentMgr::exec_plan_fragment(
 Status FragmentMgr::exec_plan_fragment(
         const TExecPlanFragmentParams& params,
         FinishCallback cb) {
-    const TUniqueId& fragment_instance_id = params.params.fragment_instance_id;
+    const TUniqueId& fragment_instance_id = params.params.fragment_instance_id; // 获取fragment_instance_id
     std::shared_ptr<FragmentExecState> exec_state;
     {
         std::lock_guard<std::mutex> lock(_lock);
-        auto iter = _fragment_map.find(fragment_instance_id);
+        auto iter = _fragment_map.find(fragment_instance_id); // 判断fragment_instance_id是否已经存在
         if (iter != _fragment_map.end()) {
             // Duplicated
             return Status::OK();

@@ -196,7 +196,7 @@ Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
     // It's fine to do a fake add_row() and return OK, because we will check _cancelled in next add_row() or mark_close().
     while (!_cancelled && _parent->_mem_tracker->any_limit_exceeded() && _pending_batches_num > 0) {
         SCOPED_RAW_TIMER(&_mem_exceeded_block_ns);
-        SleepFor(MonoDelta::FromMilliseconds(10));
+        SleepFor(MonoDelta::FromMilliseconds(10)); // 如果内存超过阈值，则当前过程被阻塞一段时间
     }
 
     auto row_no = _cur_batch->add_row(); // 添加一行数据，获取要添加行的行号
@@ -206,8 +206,8 @@ Status NodeChannel::add_row(Tuple* input_tuple, int64_t tablet_id) {
             SCOPED_RAW_TIMER(&_queue_push_lock_ns);
             std::lock_guard<std::mutex> l(_pending_batches_lock);
             //To simplify the add_row logic, postpone adding batch into req until the time of sending req
-            _pending_batches.emplace(std::move(_cur_batch), _cur_add_batch_request); // 生产出一个batch的数据，并将当前batch的数据添加到成员变量_pending_batches中
-            _pending_batches_num++;
+            _pending_batches.emplace(std::move(_cur_batch), _cur_add_batch_request); // 生产出一个batch的数据，并将当前batch的数据添加到成员变量_pending_batches中供消费者使用
+            _pending_batches_num++; // 更新成员变量，记录待发送的数据batch的数量
         }
 
         _cur_batch.reset(new RowBatch(*_row_desc, _batch_size, _parent->_mem_tracker)); // 清空数据batch，reset成员变量_cur_batch
@@ -408,7 +408,7 @@ Status IndexChannel::add_row(Tuple* tuple, int64_t tablet_id) {
     DCHECK(it != std::end(_channels_by_tablet)) << "unknown tablet, tablet_id=" << tablet_id;
     for (auto channel : it->second) { // it->second对应的类型为std::vector<NodeChannel*>，表示该tablet所分布的所有BE节点对应的NodeChannel
         // if this node channel is already failed, this add_row will be skipped
-        auto st = channel->add_row(tuple, tablet_id); // 将该行数据添加到当前BE节点所对应的NodeChannel
+        auto st = channel->add_row(tuple, tablet_id); // 将该行数据添加到当前BE节点所对应的NodeChannel，当累积到一个batch大小时，会将batch数据通过brpc发送到对应的BE
         if (!st.ok()) {
             mark_as_failed(channel); // 将当前NodeChannel标记为失败
         }
@@ -623,17 +623,17 @@ Status OlapTableSink::open(RuntimeState* state) {
     return Status::OK();
 }
 
-/*发送一个RowBatch的数据*/
+/*发送一个RowBatch的数据，会在PlanFragmentExecutor中被调用*/
 Status OlapTableSink::send(RuntimeState* state, RowBatch* input_batch) {
     SCOPED_TIMER(_profile->total_time_counter());
-    _number_input_rows += input_batch->num_rows();
+    _number_input_rows += input_batch->num_rows(); // 更新成员变量_number_input_rows，记录发送的数据行数
     // update incrementally so that FE can get the progress.
     // the real 'num_rows_load_total' will be set when sink being closed.
     state->update_num_rows_load_total(input_batch->num_rows());
     state->update_num_bytes_load_total(input_batch->total_byte_size());
     DorisMetrics::instance()->load_rows_total.increment(input_batch->num_rows());
     DorisMetrics::instance()->load_bytes_total.increment(input_batch->total_byte_size());
-    RowBatch* batch = input_batch;
+    RowBatch* batch = input_batch; // 获取需要发送的数据batch
     if (!_output_expr_ctxs.empty()) {
         SCOPED_RAW_TIMER(&_convert_batch_ns);
         _output_batch->reset();
@@ -645,33 +645,33 @@ Status OlapTableSink::send(RuntimeState* state, RowBatch* input_batch) {
     if (_need_validate_data) {
         SCOPED_RAW_TIMER(&_validate_data_ns);
         _filter_bitmap.Reset(batch->num_rows());
-        num_invalid_rows = _validate_data(state, batch, &_filter_bitmap);
-        _number_filtered_rows += num_invalid_rows;
+        num_invalid_rows = _validate_data(state, batch, &_filter_bitmap); // 进行数据校验，如果某一行被过滤，则更新成员变量_filter_bitmap中的对应位
+        _number_filtered_rows += num_invalid_rows; // 更新成员变量_number_filtered_rows，记录被过滤的数据行数
     }
     SCOPED_RAW_TIMER(&_send_data_ns);
     for (int i = 0; i < batch->num_rows(); ++i) { // 遍历batch中的每一行数据
         Tuple* tuple = batch->get_row(i)->get_tuple(0); // 获取一行数据，保存在Tuple中
-        if (num_invalid_rows > 0 && _filter_bitmap.Get(i)) {
+        if (num_invalid_rows > 0 && _filter_bitmap.Get(i)) { // 判断当前行的数据是否已经被过滤。如果该行数据已经被过滤，则跳过该行数据
             continue;
         }
         const OlapTablePartition* partition = nullptr;
         uint32_t dist_hash = 0;
-        if (!_partition->find_tablet(tuple, &partition, &dist_hash)) { // 计算当前行数据所在的partition和目标hash
+        if (!_partition->find_tablet(tuple, &partition, &dist_hash)) { // 计算当前行数据所在的partition和分桶hash
             std::stringstream ss;
             ss << "no partition for this tuple. tuple="
                << Tuple::to_string(tuple, *_output_tuple_desc);
 #if BE_TEST
             LOG(INFO) << ss.str();
 #else
-            state->append_error_msg_to_file("", ss.str());
+            state->append_error_msg_to_file("", ss.str()); // 未找到当前行对应的partition，增加错误信息
 #endif
             _number_filtered_rows++;
             continue;
         }
-        _partition_ids.emplace(partition->id); // 当前行数据所在的partition添加到成员变量_partition_ids中
-        uint32_t tablet_index = dist_hash % partition->num_buckets; // 获取tablet在partition中的索引
-        for (int j = 0; j < partition->indexes.size(); ++j) { // 依次遍历partition对应的每一个rollup
-            int64_t tablet_id = partition->indexes[j].tablets[tablet_index]; // 根据tablet在partition中的索引获取该行数据在当前rollup中tablet id
+        _partition_ids.emplace(partition->id); // 将当前行数据所在的partition添加到成员变量_partition_ids中
+        uint32_t tablet_index = dist_hash % partition->num_buckets; // 获取tablet在partition中的序号
+        for (int j = 0; j < partition->indexes.size(); ++j) {       // 依次遍历partition对应的每一个rollup
+            int64_t tablet_id = partition->indexes[j].tablets[tablet_index]; // 根据tablet在partition中的序号获取该行数据在当前rollup中tablet id
             RETURN_IF_ERROR(_channels[j]->add_row(tuple, tablet_id)); // 将该行数据添加到当前rollup对应的IndexChannel，进而，根据该行数据所在的tablet在BE上的分布，将该行数据分别添加到对应的NodeChannel中
             _number_output_rows++;
         }

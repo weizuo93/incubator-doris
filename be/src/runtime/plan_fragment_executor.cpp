@@ -72,7 +72,7 @@ PlanFragmentExecutor::~PlanFragmentExecutor() {
     }
 }
 
-/*fragment执行之前的准备工作，其中包含创建Node Tree*/
+/*fragment执行之前的准备工作，解析fragment，其中包含创建Node Tree*/
 Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     const TPlanFragmentExecParams& params = request.params;
     _query_id = params.query_id;
@@ -280,9 +280,9 @@ Status PlanFragmentExecutor::open_internal() {
     RowBatch* batch = NULL;
 
     while (true) {
-        RETURN_IF_ERROR(get_next_internal(&batch)); // 获取一个batch的数据
+        RETURN_IF_ERROR(get_next_internal(&batch)); // scan node读取一个batch的数据
 
-        if (batch == NULL) {
+        if (batch == NULL) { // 判断读取数据是否完成，如果完成，则退出循环
             break;
         }
 
@@ -301,7 +301,7 @@ Status PlanFragmentExecutor::open_internal() {
         if (_collect_query_statistics_with_every_batch) {
             collect_query_statistics();
         }
-        RETURN_IF_ERROR(_sink->send(runtime_state(), batch)); // 通过data sink将当前batch的数据发送出去
+        RETURN_IF_ERROR(_sink->send(runtime_state(), batch)); // 通过data sink将scan node读取到的一个batch的数据发送出去
     }
 
     // Close the sink *before* stopping the report thread. Close may
@@ -323,7 +323,7 @@ Status PlanFragmentExecutor::open_internal() {
             boost::lock_guard<boost::mutex> l(_status_lock);
             status = _status;
         }
-        status = _sink->close(runtime_state(), status); // 关闭data sink
+        status = _sink->close(runtime_state(), status); // 数据发送完成，关闭data sink
         RETURN_IF_ERROR(status);
     }
 
@@ -459,6 +459,7 @@ Status PlanFragmentExecutor::get_next(RowBatch** batch) {
     return status;
 }
 
+/*scan node读取一个batch的数据，通过参数传回*/
 Status PlanFragmentExecutor::get_next_internal(RowBatch** batch) {
     if (_done) {
         *batch = NULL;
@@ -468,7 +469,7 @@ Status PlanFragmentExecutor::get_next_internal(RowBatch** batch) {
     while (!_done) {
         _row_batch->reset();
         SCOPED_TIMER(profile()->total_time_counter());
-        RETURN_IF_ERROR(_plan->get_next(_runtime_state.get(), _row_batch.get(), &_done)); // 获取一个batch的数据
+        RETURN_IF_ERROR(_plan->get_next(_runtime_state.get(), _row_batch.get(), &_done)); // scan node读取一个batch的数据
 
         if (_row_batch->num_rows() > 0) {
             COUNTER_UPDATE(_rows_produced_counter, _row_batch->num_rows());
