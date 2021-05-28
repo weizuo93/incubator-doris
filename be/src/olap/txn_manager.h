@@ -66,6 +66,7 @@ struct TabletTxnInfo {
 
 
 // txn manager is used to manage mapping between tablet and txns
+// 用于管理tablet和txn的对应关系
 class TxnManager {
 public:
     TxnManager(int32_t txn_map_shard_size, int32_t txn_shard_size);
@@ -143,7 +144,7 @@ public:
     
 private:
 
-    using TxnKey = std::pair<int64_t, int64_t>; // partition_id, transaction_id;
+    using TxnKey = std::pair<int64_t, int64_t>; // partition_id和transaction_id组成的pair
 
     // implement TxnKey hash function to support TxnKey as a key for unordered_map
     struct TxnKeyHash {
@@ -161,8 +162,8 @@ private:
         }
     };
 
-    typedef std::unordered_map<TxnKey, std::map<TabletInfo, TabletTxnInfo>, TxnKeyHash, TxnKeyEqual> txn_tablet_map_t;
-    typedef std::unordered_map<int64_t, std::unordered_set<int64_t>> txn_partition_map_t;
+    typedef std::unordered_map<TxnKey, std::map<TabletInfo, TabletTxnInfo>, TxnKeyHash, TxnKeyEqual> txn_tablet_map_t; // 保存特定transaction_id下的特定partition_id下所有相关的TabletTxnInfo
+    typedef std::unordered_map<int64_t, std::unordered_set<int64_t>> txn_partition_map_t; // 保存transaction_id到该txn相关的所有partition_id之间的对应关系
 
     inline RWMutex& _get_txn_map_lock(TTransactionId transactionId);
 
@@ -200,10 +201,16 @@ inline RWMutex& TxnManager::_get_txn_map_lock(TTransactionId transactionId) {
     return _txn_map_locks[transactionId & (_txn_map_shard_size - 1)];
 }
 
+/*
+  节点上_txn_tablet_maps数组的大小为_txn_map_shard_size，某一个txn具体存放在_txn_tablet_maps的第几个元素里管理是通过规则 “transactionId & (_txn_map_shard_size - 1)” 计算出来的。
+  不同的transactionId可以通过该规则被映射到相同的_txn_tablet_maps的元素里。每一个_txn_tablet_maps元素对应一个txn_tablet_map_t。（注意： a & b 的结果一定小于或等于a b两者中较小的数。）
+*/
+/*根据参数传入的transactionId计算当前transactionId应该对应的txn_tablet_map_t*/
 inline TxnManager::txn_tablet_map_t& TxnManager::_get_txn_tablet_map(TTransactionId transactionId) {
     return _txn_tablet_maps[transactionId & (_txn_map_shard_size - 1)];
 }
 
+/*根据参数传入的transactionId计算当前transactionId应该对应的txn_partition_map_t*/
 inline TxnManager::txn_partition_map_t& TxnManager::_get_txn_partition_map(TTransactionId transactionId) {
     return _txn_partition_maps[transactionId & (_txn_map_shard_size - 1)];
 }

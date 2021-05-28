@@ -42,7 +42,7 @@ OLAPStatus EnginePublishVersionTask::finish() {
         // get all partition related tablets and check whether the tablet have the related version
         std::set<TabletInfo> partition_related_tablet_infos;
         StorageEngine::instance()->tablet_manager()->get_partition_related_tablets(
-                partition_id, &partition_related_tablet_infos); // 获取partition相关的所有tablet
+                partition_id, &partition_related_tablet_infos); // 获取partition下的所有tablet
         if (_publish_version_req.strict_mode && partition_related_tablet_infos.empty()) {
             LOG(INFO) << "could not find related tablet for partition " << partition_id
                       << ", skip publish version";
