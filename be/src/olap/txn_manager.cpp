@@ -327,32 +327,33 @@ OLAPStatus TxnManager::publish_txn(OlapMeta* meta, TPartitionId partition_id, TT
 // if the txn has related rowset then could not rollback it, because it
 // may be committed in another thread and our current thread meets errors when writing to data file
 // BE has to wait for fe call clear txn api
+/*回滚txn，将tablet导入数据的信息从txn manager中删除*/
 OLAPStatus TxnManager::rollback_txn(TPartitionId partition_id, TTransactionId transaction_id,
                                     TTabletId tablet_id, SchemaHash schema_hash, TabletUid tablet_uid) {
     pair<int64_t, int64_t> key(partition_id, transaction_id);
     TabletInfo tablet_info(tablet_id, schema_hash, tablet_uid);
     WriteLock wrlock(&_get_txn_map_lock(transaction_id));
-    txn_tablet_map_t& txn_tablet_map = _get_txn_tablet_map(transaction_id);
-    auto it = txn_tablet_map.find(key);
-    if (it != txn_tablet_map.end()) {
-        auto load_itr = it->second.find(tablet_info);
-        if (load_itr != it->second.end()) {
+    txn_tablet_map_t& txn_tablet_map = _get_txn_tablet_map(transaction_id); // 获取当前transaction_id所在的txn_tablet_map_t
+    auto it = txn_tablet_map.find(key); // 在txn_tablet_map_t中查找参数传入的partition_id和transaction_id
+    if (it != txn_tablet_map.end()) { // 参数传入的partition_id和transaction_id已经存在在txn manager中
+        auto load_itr = it->second.find(tablet_info); // 从txn manager中查找tablet_info
+        if (load_itr != it->second.end()) { // 从txn manager中查找到了tablet_info
             // found load for txn,tablet
             // case 1: user commit rowset, then the load id must be equal
             TabletTxnInfo& load_info = load_itr->second;
-            if (load_info.rowset != nullptr) {
+            if (load_info.rowset != nullptr) { // 如果rowset存在，则txn已经被commit了
                 // if rowset is not null, it means other thread may commit the rowset
                 // should not delete txn any more
                 return OLAP_ERR_TRANSACTION_ALREADY_COMMITTED;
             }
         }
-        it->second.erase(tablet_info);
+        it->second.erase(tablet_info); // 从txn manager中删除tablet_info
         LOG(INFO) << "rollback transaction from engine successfully."
                   << " partition_id: " << key.first
                   << ", transaction_id: " << key.second
                   << ", tablet: " << tablet_info.to_string();
-        if (it->second.empty()) {
-            txn_tablet_map.erase(it);
+        if (it->second.empty()) { // 判断当前partition_id和transaction_id的pair下的tablet是否已经均被删除了
+            txn_tablet_map.erase(it); // 从txn manager中删除该partition id和transaction_id的pair
             _clear_txn_partition_map_unlocked(transaction_id, partition_id);
         }
     }
@@ -361,23 +362,24 @@ OLAPStatus TxnManager::rollback_txn(TPartitionId partition_id, TTransactionId tr
 
 // fe call this api to clear unused rowsets in be
 // could not delete the rowset if it already has a valid version
+/*删除txn*/
 OLAPStatus TxnManager::delete_txn(OlapMeta* meta, TPartitionId partition_id, TTransactionId transaction_id,
                                   TTabletId tablet_id, SchemaHash schema_hash, TabletUid tablet_uid) {
     pair<int64_t, int64_t> key(partition_id, transaction_id);
     TabletInfo tablet_info(tablet_id, schema_hash, tablet_uid);
     WriteLock txn_wrlock(&_get_txn_map_lock(transaction_id));
-    txn_tablet_map_t& txn_tablet_map = _get_txn_tablet_map(transaction_id);
-    auto it = txn_tablet_map.find(key);
+    txn_tablet_map_t& txn_tablet_map = _get_txn_tablet_map(transaction_id); // 获取当前transaction_id所在的txn_tablet_map_t
+    auto it = txn_tablet_map.find(key); // 在txn_tablet_map_t中查找参数传入的partition_id和transaction_id
     if (it == txn_tablet_map.end()) {
         return OLAP_ERR_TRANSACTION_NOT_EXIST;
     }
-    auto load_itr = it->second.find(tablet_info);
+    auto load_itr = it->second.find(tablet_info); // 从txn manager中查找tablet_info
     if (load_itr != it->second.end()) {
         // found load for txn,tablet
         // case 1: user commit rowset, then the load id must be equal
-        TabletTxnInfo& load_info = load_itr->second;
-        if (load_info.rowset != nullptr && meta != nullptr) {
-            if (load_info.rowset->version().first > 0) { 
+        TabletTxnInfo& load_info = load_itr->second; // 从txn manager中获取参数传入的tablet、partition_id和transaction_id对应的TabletTxnInfo
+        if (load_info.rowset != nullptr && meta != nullptr) { // 判断rowset以及mate是否存在
+            if (load_info.rowset->version().first > 0) { // 判断rowset是否已经被publish了，即版本是否可见
                 LOG(WARNING) << "could not delete transaction from engine, "
                                 << "just remove it from memory not delete from disk" 
                                 << " because related rowset already published."
@@ -388,9 +390,9 @@ OLAPStatus TxnManager::delete_txn(OlapMeta* meta, TPartitionId partition_id, TTr
                                 << ", version: " << load_info.rowset->version().first;
                 return OLAP_ERR_TRANSACTION_ALREADY_VISIBLE;
             } else {
-                RowsetMetaManager::remove(meta, tablet_uid, load_info.rowset->rowset_id());
+                RowsetMetaManager::remove(meta, tablet_uid, load_info.rowset->rowset_id()); // 移除rowset meta
                 #ifndef BE_TEST
-                StorageEngine::instance()->add_unused_rowset(load_info.rowset);
+                StorageEngine::instance()->add_unused_rowset(load_info.rowset); // 将数据导入生成的rowset标记为不可用的rowset添加到StorageEngine的成员变量_unused_rowsets中
                 #endif
                 VLOG(3) << "delete transaction from engine successfully."
                         << " partition_id: " << key.first
@@ -400,9 +402,9 @@ OLAPStatus TxnManager::delete_txn(OlapMeta* meta, TPartitionId partition_id, TTr
             }
         }
     }
-    it->second.erase(tablet_info);
-    if (it->second.empty()) {
-        txn_tablet_map.erase(it);
+    it->second.erase(tablet_info); // 从txn manager中删除tablet_info
+    if (it->second.empty()) { // 判断当前partition_id和transaction_id的pair下的tablet是否已经均被删除了
+        txn_tablet_map.erase(it); // 从txn manager中删除该partition id和transaction_id的pair
         _clear_txn_partition_map_unlocked(transaction_id, partition_id);
     }
     return OLAP_SUCCESS;
@@ -470,14 +472,15 @@ void TxnManager::force_rollback_tablet_related_txns(OlapMeta* meta, TTabletId ta
     }
 }
 
+/*获取参数传入的partition_id下transaction_id相关的所有tablet以及每个tablet生成的rowset*/
 void TxnManager::get_txn_related_tablets(const TTransactionId transaction_id,
                                          TPartitionId partition_id,
                                          std::map<TabletInfo, RowsetSharedPtr>* tablet_infos) {
     // get tablets in this transaction
     pair<int64_t, int64_t> key(partition_id, transaction_id);
     ReadLock txn_rdlock(&_get_txn_map_lock(transaction_id));
-    txn_tablet_map_t& txn_tablet_map = _get_txn_tablet_map(transaction_id);
-    auto it = txn_tablet_map.find(key);
+    txn_tablet_map_t& txn_tablet_map = _get_txn_tablet_map(transaction_id); // 获取当前transaction_id所在的txn_tablet_map_t
+    auto it = txn_tablet_map.find(key); // 在txn_tablet_map_t中查找参数传入的partition_id和transaction_id
     if (it == txn_tablet_map.end()) {
         VLOG(3) << "could not find tablet for"
                 << " partition_id=" << partition_id 
@@ -487,11 +490,11 @@ void TxnManager::get_txn_related_tablets(const TTransactionId transaction_id,
     std::map<TabletInfo, TabletTxnInfo>& load_info_map = it->second;
 
     // each tablet
-    for (auto& load_info : load_info_map) {
-        const TabletInfo& tablet_info = load_info.first;
+    for (auto& load_info : load_info_map) { // 依次遍历参数传入的partition_id下transaction_id相关的所有tablet
+        const TabletInfo& tablet_info = load_info.first; // 获取当前tablet的TabletInfo
         // must not check rowset == null here, because if rowset == null
         // publish version should failed
-	    tablet_infos->emplace(tablet_info, load_info.second.rowset);
+	    tablet_infos->emplace(tablet_info, load_info.second.rowset); // 将当前tablet和数据导入生成的rowset添加到tablet_infos中，并通过参数传回
     }
 }
 

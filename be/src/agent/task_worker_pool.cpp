@@ -716,10 +716,10 @@ void* TaskWorkerPool::_publish_version_worker_thread_callback(void* arg_this) {
         vector<TTabletId> error_tablet_ids;
         uint32_t retry_time = 0;
         OLAPStatus res = OLAP_SUCCESS;
-        while (retry_time < PUBLISH_VERSION_MAX_RETRY) {
+        while (retry_time < PUBLISH_VERSION_MAX_RETRY) { // publish会进行失败重试
             error_tablet_ids.clear();
-            EnginePublishVersionTask engine_task(publish_version_req, &error_tablet_ids);
-            res = worker_pool_this->_env->storage_engine()->execute_task(&engine_task);
+            EnginePublishVersionTask engine_task(publish_version_req, &error_tablet_ids); // 创建EnginePublishVersionTask对象
+            res = worker_pool_this->_env->storage_engine()->execute_task(&engine_task);   // 执行publish task
             if (res == OLAP_SUCCESS) {
                 break;
             } else {

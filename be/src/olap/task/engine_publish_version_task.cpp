@@ -36,13 +36,13 @@ OLAPStatus EnginePublishVersionTask::finish() {
     int64_t transaction_id = _publish_version_req.transaction_id;
     LOG(INFO) << "begin to process publish version. transaction_id=" << transaction_id;
 
-    // each partition
+    // 依次对每一个partition下的相关tablet执行publish（each partition）
     for (auto& par_ver_info : _publish_version_req.partition_version_infos) { // 遍历publish version相关的每一个partition
         int64_t partition_id = par_ver_info.partition_id;
         // get all partition related tablets and check whether the tablet have the related version
         std::set<TabletInfo> partition_related_tablet_infos;
         StorageEngine::instance()->tablet_manager()->get_partition_related_tablets(
-                partition_id, &partition_related_tablet_infos); // 获取partition下的所有tablet
+                partition_id, &partition_related_tablet_infos); // 获取partition下的所有tablet,通过参数partition_related_tablet_infos传回
         if (_publish_version_req.strict_mode && partition_related_tablet_infos.empty()) {
             LOG(INFO) << "could not find related tablet for partition " << partition_id
                       << ", skip publish version";
@@ -50,56 +50,58 @@ OLAPStatus EnginePublishVersionTask::finish() {
         }
 
         map<TabletInfo, RowsetSharedPtr> tablet_related_rs;
-        StorageEngine::instance()->txn_manager()->get_txn_related_tablets( // 获取partition下当前publish事务相关的所有tablet
+        StorageEngine::instance()->txn_manager()->get_txn_related_tablets( // 获取partition下本次数据导入相关的所有tablet以及每个tablet生成的rowset，通过参数tablet_related_rs传回
                 transaction_id, partition_id, &tablet_related_rs);
 
-        Version version(par_ver_info.version, par_ver_info.version);
+        Version version(par_ver_info.version, par_ver_info.version); //当前partition本次数据导入的版本
         VersionHash version_hash = par_ver_info.version_hash;
 
         // each tablet
-        for (auto& tablet_rs : tablet_related_rs) { // 遍历每一个tablet
+        for (auto& tablet_rs : tablet_related_rs) { // 依次遍历每一个导入相关的tablet
             OLAPStatus publish_status = OLAP_SUCCESS;
-            TabletInfo tablet_info = tablet_rs.first;
-            RowsetSharedPtr rowset = tablet_rs.second;
+            TabletInfo tablet_info = tablet_rs.first; // 获取当前tablet的TabletInfo
+            RowsetSharedPtr rowset = tablet_rs.second;// 获取当前tablet本次导入生成的rowset
             LOG(INFO) << "begin to publish version on tablet. "
                 << "tablet_id=" << tablet_info.tablet_id
                 << ", schema_hash=" << tablet_info.schema_hash
                 << ", version=" << version.first
                 << ", version_hash=" << version_hash
                 << ", transaction_id=" << transaction_id;
-            // if rowset is null, it means this be received write task, but failed during write
-            // and receive fe's publish version task
-            // this be must return as an error tablet
+            // if rowset is null, it means this BE received write task, but failed during write
+            // and receive FE's publish version task
+            // this BE must return as an error tablet
+            // 当前tabelt在数据导入过程中失败，没有成功生成rowset，但是收到了FE下发的publish
             if (rowset == nullptr) {
                 LOG(WARNING) << "could not find related rowset for tablet " << tablet_info.tablet_id
                              << " txn id " << transaction_id;
-                _error_tablet_ids->push_back(tablet_info.tablet_id);
+                _error_tablet_ids->push_back(tablet_info.tablet_id); //将当前tabelt添加到成员变量_error_tablet_ids中
                 res = OLAP_ERR_PUSH_ROWSET_NOT_FOUND;
                 continue;
             }
             TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(
-                    tablet_info.tablet_id, tablet_info.schema_hash, tablet_info.tablet_uid); // 获取tablet
-            if (tablet == nullptr) {
+                    tablet_info.tablet_id, tablet_info.schema_hash, tablet_info.tablet_uid); // 获取当前的tablet
+            if (tablet == nullptr) { // 判断tablet是否存在
                 LOG(WARNING) << "can't get tablet when publish version. tablet_id=" << tablet_info.tablet_id
                              << " schema_hash=" << tablet_info.schema_hash;
-                _error_tablet_ids->push_back(tablet_info.tablet_id);
+                _error_tablet_ids->push_back(tablet_info.tablet_id); // 将当前tabelt添加到成员变量_error_tablet_ids中
                 res = OLAP_ERR_PUSH_TABLE_NOT_EXIST;
                 continue;
             }
 
+            // 将transaction_id下的当前tablet中数据导入生成的rowset变成可见版本、持久化rowset meta信息，并从txn manager中删除该tabelt的本次数据导入transaction
             publish_status = StorageEngine::instance()->txn_manager()->publish_txn(
-                    partition_id, tablet, transaction_id, version, version_hash); // 执行publish事务
-            if (publish_status != OLAP_SUCCESS) {
+                    partition_id, tablet, transaction_id, version, version_hash); // 对当前tablet执行publish txn
+            if (publish_status != OLAP_SUCCESS) { // 判断对当前tablet执行publish txn是否成功
                 LOG(WARNING) << "failed to publish version. rowset_id=" << rowset->rowset_id()
                              << ", tablet_id=" << tablet_info.tablet_id
                              << ", txn_id=" << transaction_id;
-                _error_tablet_ids->push_back(tablet_info.tablet_id);
+                _error_tablet_ids->push_back(tablet_info.tablet_id); // 将当前tabelt添加到成员变量_error_tablet_ids中
                 res = publish_status;
                 continue;
             }
 
             // add visible rowset to tablet
-            publish_status = tablet->add_inc_rowset(rowset); // 将rowset添加到tablet进行管理
+            publish_status = tablet->add_inc_rowset(rowset); // 将可见的rowset添加到当前tablet中进行管理
             if (publish_status != OLAP_SUCCESS
                     && publish_status != OLAP_ERR_PUSH_VERSION_ALREADY_EXIST) {
                 LOG(WARNING) << "fail to add visible rowset to tablet. rowset_id="
@@ -111,26 +113,27 @@ OLAPStatus EnginePublishVersionTask::finish() {
                 res = publish_status;
                 continue;
             }
-            partition_related_tablet_infos.erase(tablet_info);
+            partition_related_tablet_infos.erase(tablet_info); // 从partition_related_tablet_infos中删除当前tablet
             LOG(INFO) << "publish version successfully on tablet. tablet=" << tablet->full_name()
                 << ", transaction_id=" << transaction_id << ", version=" << version.first
                 << ", res=" << publish_status;
         }
 
         // check if the related tablet remained all have the version
+        // 依次遍历partition_related_tablet_infos中的每一个tablet，此时，partition_related_tablet_infos中只剩下当前partition下本次没有数据导入的tablet
         for (auto& tablet_info : partition_related_tablet_infos) {
             // has to use strict mode to check if check all tablets
-            if (!_publish_version_req.strict_mode) {
+            if (!_publish_version_req.strict_mode) { // strict_mode表示BE会检查tablet的版本缺失
                 break;
             }
             TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(
-                    tablet_info.tablet_id, tablet_info.schema_hash);
+                    tablet_info.tablet_id, tablet_info.schema_hash); // 获取tablet
             if (tablet == nullptr) {
                 _error_tablet_ids->push_back(tablet_info.tablet_id);
             } else {
                 // check if the version exist, if not exist, then set publish failed
-                if (!tablet->check_version_exist(version)) {
-                    _error_tablet_ids->push_back(tablet_info.tablet_id);
+                if (!tablet->check_version_exist(version)) { // 判断当前tablet是否包含该数据版本
+                    _error_tablet_ids->push_back(tablet_info.tablet_id); // // 将当前tabelt添加到成员变量_error_tablet_ids中
                     // generate a pull rowset meta task to pull rowset from remote meta store and storage
                     // pull rowset meta using tablet_id + txn_id
                     // it depends on the tablet type to download file or only meta
