@@ -144,14 +144,14 @@ Status NodeChannel::open_wait() {
     }
 
     // add batch closure
-    _add_batch_closure = ReusableClosure<PTabletWriterAddBatchResult>::create();
-    _add_batch_closure->addFailedHandler([this]() {
+    _add_batch_closure = ReusableClosure<PTabletWriterAddBatchResult>::create(); // 创建ReusableClosure对象
+    _add_batch_closure->addFailedHandler([this]() { // 设置add batch失败的回调
         _cancelled = true;
         LOG(WARNING) << name() << " add batch req rpc failed, " << print_load_info()
                      << ", node=" << node_info()->host << ":" << node_info()->brpc_port;
     });
 
-    _add_batch_closure->addSuccessHandler(
+    _add_batch_closure->addSuccessHandler(           // 设置数据batch通过brpc发送到executor BE之后，并被成功写入tablet的回调
             [this](const PTabletWriterAddBatchResult& result, bool is_last_rpc) {
                 Status status(result.status());
                 if (status.ok()) {
@@ -162,7 +162,7 @@ Status NodeChannel::open_wait() {
                             commit_info.backendId = _node_id;
                             _tablet_commit_infos.emplace_back(std::move(commit_info));
                         }
-                        _add_batches_finished = true;
+                        _add_batches_finished = true; //当前NodeChannel的最后一个数据batch发送结束并在executor BE被处理完成之后，将成员变量_add_batches_finished置为true
                     }
                 } else {
                     _cancelled = true;
@@ -252,13 +252,13 @@ Status NodeChannel::close_wait(RuntimeState* state) {
     // waiting for finished, it may take a long time, so we could't set a timeout
     MonotonicStopWatch timer;
     timer.start();
-    while (!_add_batches_finished && !_cancelled) {
+    while (!_add_batches_finished && !_cancelled) { // 等待当前NodeChannel的所有数据batch都通过brpc发送到了对应的BE节点或等待当前NodeChannel被cancel
         SleepFor(MonoDelta::FromMilliseconds(1));
     }
     timer.stop();
     VLOG(1) << name() << " close_wait cost: " << timer.elapsed_time() / 1000000 << " ms";
 
-    if (_add_batches_finished) {
+    if (_add_batches_finished) { // 当前NodeChannel的所有数据batch都通过brpc发送到了对应的BE节点
         {
             std::lock_guard<std::mutex> lg(_pending_batches_lock);
             CHECK(_pending_batches.empty()) << name();
@@ -266,7 +266,7 @@ Status NodeChannel::close_wait(RuntimeState* state) {
         }
         state->tablet_commit_infos().insert(state->tablet_commit_infos().end(),
                                             std::make_move_iterator(_tablet_commit_infos.begin()),
-                                            std::make_move_iterator(_tablet_commit_infos.end()));
+                                            std::make_move_iterator(_tablet_commit_infos.end())); // 将当前NodeChannel涉及的tablet添加到runtimestate的_tablet_commit_infos成员变量中，用于stream load txn的commit
         return Status::OK();
     }
 
