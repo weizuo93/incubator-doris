@@ -119,8 +119,8 @@ uint64_t SegmentWriter::estimate_segment_size() {
 
 /*向segment文件中刷写数据和索引*/
 Status SegmentWriter::finalize(uint64_t* segment_file_size, uint64_t* index_size) {
-    for (auto& column_writer : _column_writers) {
-        RETURN_IF_ERROR(column_writer->finish());
+    for (auto& column_writer : _column_writers) { // 依次遍历每一个列的column_writer
+        RETURN_IF_ERROR(column_writer->finish()); // 对当前列的最后一个page进行编码和压缩
     }
     RETURN_IF_ERROR(_write_data()); //向文件块中追加列数据
     uint64_t index_offset = _wblock->bytes_appended(); //获取已经追加到文件块中的字节数，也就是列数据大小，同时也是索引数据的起始位置

@@ -100,7 +100,7 @@ OLAPStatus BetaRowsetWriter::_add_row(const RowType& row) {
         LOG(WARNING) << "failed to append row: " << s.to_string();
         return OLAP_ERR_WRITER_DATA_WRITE_ERROR;
     }
-    // 当前segment的大小到达某个设定的阈值或segment中的行数到达某个设定的阈值，则执行segment flush,因此，一个memtable可能会刷写出多个segment文件
+    // 当前segment的大小到达某个设定的阈值或segment中的行数到达某个设定的阈值(256MB)，则执行segment flush,因此，一个memtable可能会刷写出多个segment文件
     if (PREDICT_FALSE(_segment_writer->estimate_segment_size() >= MAX_SEGMENT_SIZE
             || _segment_writer->num_rows_written() >= _context.max_rows_per_segment)) {
         RETURN_NOT_OK(_flush_segment_writer()); //刷写一个segment文件

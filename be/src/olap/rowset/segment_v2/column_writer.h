@@ -126,6 +126,7 @@ private:
         Page* tail = nullptr;
     };
 
+    /*将参数传入的page添加到成员变量_pages（链表）*/
     void _push_back_page(Page* page) {
         // add page to pages' tail
         if (_pages.tail != nullptr) {
