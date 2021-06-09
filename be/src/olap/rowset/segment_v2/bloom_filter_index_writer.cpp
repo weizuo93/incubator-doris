@@ -103,8 +103,8 @@ public:
 
     Status flush() override {
         std::unique_ptr<BloomFilter> bf;
-        RETURN_IF_ERROR(BloomFilter::create(BLOCK_BLOOM_FILTER, &bf));
-        RETURN_IF_ERROR(bf->init(_values.size(), _bf_options.fpp, _bf_options.strategy));
+        RETURN_IF_ERROR(BloomFilter::create(BLOCK_BLOOM_FILTER, &bf)); // 创建BloomFilter对象
+        RETURN_IF_ERROR(bf->init(_values.size(), _bf_options.fpp, _bf_options.strategy)); // 初始化BloomFilter对象
         bf->set_has_null(_has_null);
         for (auto& v : _values) {
             if (_is_slice_type()) {

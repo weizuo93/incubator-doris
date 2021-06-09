@@ -37,14 +37,15 @@ bool IndexPageBuilder::is_full() const {
     return _buffer.size()  + 16 > _index_page_size;
 }
 
+/*获取索引page的body，并设置page的footer*/
 void IndexPageBuilder::finish(OwnedSlice* body, PageFooterPB* footer) {
     DCHECK(!_finished) << "already called finish()";
-    *body = _buffer.build();
+    *body = _buffer.build(); // 获取索引page的body
 
-    footer->set_type(INDEX_PAGE);
-    footer->set_uncompressed_size(body->slice().get_size());
-    footer->mutable_index_page_footer()->set_num_entries(_count);
-    footer->mutable_index_page_footer()->set_type(
+    footer->set_type(INDEX_PAGE); // 设置footer的类型为INDEX_PAGE
+    footer->set_uncompressed_size(body->slice().get_size()); // 在footer中设置压缩前的索引page的大小
+    footer->mutable_index_page_footer()->set_num_entries(_count); // 在footer中设置索引page的行数
+    footer->mutable_index_page_footer()->set_type(  // 设置索引footer类型
             _is_leaf ? IndexPageFooterPB::LEAF : IndexPageFooterPB::INTERNAL);
 }
 

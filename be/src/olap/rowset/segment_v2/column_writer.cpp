@@ -180,13 +180,14 @@ Status ColumnWriter::_append_data(const uint8_t** ptr, size_t num_rows) {
         //向_page_builder中添加列数据，add()函数中会修改num_written值，表示当前page在这一次添加了多少行（当前page可能还没有添加完num_written行就已经满了，添加的是每一行中的一个列数据）
         RETURN_IF_ERROR(_page_builder->add(*ptr, &num_written));
         if (_opts.need_zone_map) {
-            _zone_map_index_builder->add_values(*ptr, num_written); //向_zone_map_index_builder中添加列数据
+            _zone_map_index_builder->add_values(*ptr, num_written); // 向当前列中添加一条数据之后，使用_zone_map_index_builder更新zone map索引
         }
         if (_opts.need_bitmap_index) {
-            _bitmap_index_builder->add_values(*ptr, num_written); //向_bitmap_index_builder中添加列数据
+            _bitmap_index_bu
+                    ilder->add_values(*ptr, num_written); // 向当前列中添加一条数据之后，使用_bitmap_index_builder更新bitmap索引
         }
         if (_opts.need_bloom_filter) {
-            _bloom_filter_index_builder->add_values(*ptr, num_written); //向_bloom_filter_index_builder中添加列数据
+            _bloom_filter_index_builder->add_values(*ptr, num_written); // 向当前列中添加一条数据之后，使用_bloom_filter_index_builder更新bloom filter索引
         }
 
         bool is_page_full = (num_written < remaining); //如果num_written < remaining，则表示当前page已经满了（本次没有添加完所有的remaining行，当前page就已经满了，添加的是每一行中的一个列数据）
@@ -284,31 +285,31 @@ Status ColumnWriter::write_data() {
     return Status::OK();
 }
 
-/*向文件块中追加ordinal索引*/
+/*通过WritableBlock向block中追加ordinal索引*/
 Status ColumnWriter::write_ordinal_index() {
-    return _ordinal_index_builder->finish(_wblock, _opts.meta->add_indexes());
+    return _ordinal_index_builder->finish(_wblock, _opts.meta->add_indexes()); // 通过WritableBlock将当前列的ordinal索引追加到block中
 }
 
-/*向文件块中追加zonemap索引*/
+/*通过WritableBlock向block中追加zone map索引*/
 Status ColumnWriter::write_zone_map() {
     if (_opts.need_zone_map) {
-        return _zone_map_index_builder->finish(_wblock, _opts.meta->add_indexes());
+        return _zone_map_index_builder->finish(_wblock, _opts.meta->add_indexes()); // 通过WritableBlock将当前列的zone map索引追加到block中
     }
     return Status::OK();
 }
 
-/*向文件块中追加bitmap索引*/
+/*通过WritableBlock向block中追加bit map索引*/
 Status ColumnWriter::write_bitmap_index() {
     if (_opts.need_bitmap_index) {
-        return _bitmap_index_builder->finish(_wblock, _opts.meta->add_indexes());
+        return _bitmap_index_builder->finish(_wblock, _opts.meta->add_indexes()); // 通过WritableBlock将当前列的bitmap索引（包括字典和位图）追加到block中
     }
     return Status::OK();
 }
 
-/*向文件块中追加bloom filter索引*/
+/*通过WritableBlock向block中追加bloom filter索引*/
 Status ColumnWriter::write_bloom_filter_index() {
     if (_opts.need_bloom_filter) {
-        return _bloom_filter_index_builder->finish(_wblock, _opts.meta->add_indexes());
+        return _bloom_filter_index_builder->finish(_wblock, _opts.meta->add_indexes()); // 通过WritableBlock将当前列的bloom filter索引（包括字典和位图）追加到block中
     }
     return Status::OK();
 }
@@ -321,8 +322,9 @@ Status ColumnWriter::_write_data_page(Page* page) {
     for (auto& data : page->data) {
         compressed_body.push_back(data.slice()); // 获取page中压缩之后的数据
     }
-    RETURN_IF_ERROR(PageIO::write_page(_wblock, compressed_body, page->footer, &pp)); // 将压缩之后的page数据写入文件
-    _ordinal_index_builder->append_entry(page->footer.data_page_footer().first_ordinal(), pp); // 更新ordinal index
+    RETURN_IF_ERROR(PageIO::write_page(_wblock, compressed_body, page->footer, &pp)); // 将page的footer以及checksum追加到page body之后，并通过WritableBlock把整个page写入block，page在block中的起始位置以及大小通过参数pp传回
+    // Ordinal index记录了每个Column Data Page的位置offset、大小size和第一个数据项行号信息，即Ordinal。在一个segment中，数据始终按照key排序顺序进行存储，即key的排序决定了数据存储的物理结构。Ordinal index使每个列具有按行信息进行快速扫描的能力
+    _ordinal_index_builder->append_entry(page->footer.data_page_footer().first_ordinal(), pp); // 通过_ordinal_index_builder添加一条ordinal索引（其中保存当前page的起始行号和指向page的指针）
     return Status::OK();
 }
 
@@ -333,22 +335,22 @@ Status ColumnWriter::_finish_current_page() {
     }
 
     if (_opts.need_zone_map) {
-        RETURN_IF_ERROR(_zone_map_index_builder->flush()); // 将当前page的zone map index进行flush
+        RETURN_IF_ERROR(_zone_map_index_builder->flush()); // 使用当前page的zone map index更新当前列的zone map index,并对当前page的zone map index进行保存
     }
 
     if (_opts.need_bloom_filter) {
-        RETURN_IF_ERROR(_bloom_filter_index_builder->flush()); // 将当前page的bloom filter index进行flush
+        RETURN_IF_ERROR(_bloom_filter_index_builder->flush()); // 保存当前page的bloom filter index
     }
 
     // build data page body : encoded values + [nullmap]
     vector<Slice> body;
-    OwnedSlice encoded_values = _page_builder->finish(); // 对当前page的数据进行编码
+    OwnedSlice encoded_values = _page_builder->finish(); // 对当前page的数据进行编码，返回编码后的数据
     _page_builder->reset(); // reset成员变量_page_builder
     body.push_back(encoded_values.slice()); // 将编码之后的page数据添加到body中
 
     OwnedSlice nullmap;
-    if (_is_nullable && _null_bitmap_builder->has_null()) {
-        nullmap = _null_bitmap_builder->finish();
+    if (_is_nullable && _null_bitmap_builder->has_null()) { // 判断当前列是否存在null值
+        nullmap = _null_bitmap_builder->finish(); // 保存当前page的bitmap index
         body.push_back(nullmap.slice()); // 将null bitmap添加到body中
     }
     if (_null_bitmap_builder != nullptr) {

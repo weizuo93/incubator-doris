@@ -62,6 +62,7 @@ Status PageIO::compress_page_body(const BlockCompressionCodec* codec,
     return Status::OK();
 }
 
+/*将page的footer以及checksum追加到page body之后，并通过WritableBlock把整个page写入block，page在block中的起始位置以及大小通过参数result传回*/
 Status PageIO::write_page(fs::WritableBlock* wblock,
                           const std::vector<Slice>& body,
                           const PageFooterPB& footer,
@@ -69,7 +70,7 @@ Status PageIO::write_page(fs::WritableBlock* wblock,
     // sanity check of page footer
     CHECK(footer.has_type()) << "type must be set";
     CHECK(footer.has_uncompressed_size()) << "uncompressed_size must be set";
-    switch (footer.type()) {
+    switch (footer.type()) { // 根据page的类型判断是否有对应的footer
     case DATA_PAGE:
         CHECK(footer.has_data_page_footer());
         break;
@@ -88,23 +89,23 @@ Status PageIO::write_page(fs::WritableBlock* wblock,
     }
 
     std::string footer_buf; // serialized footer + footer size
-    footer.SerializeToString(&footer_buf);
-    put_fixed32_le(&footer_buf, static_cast<uint32_t>(footer_buf.size()));
+    footer.SerializeToString(&footer_buf); // 将footer序列化为字符串
+    put_fixed32_le(&footer_buf, static_cast<uint32_t>(footer_buf.size())); // 对footer进行固定的32位长度编码
 
     std::vector<Slice> page = body;
-    page.emplace_back(footer_buf);
+    page.emplace_back(footer_buf); // 将footer添加到page body之后
 
     // checksum
     uint8_t checksum_buf[sizeof(uint32_t)];
-    uint32_t checksum = crc32c::Value(page);
-    encode_fixed32_le(checksum_buf, checksum);
-    page.emplace_back(checksum_buf, sizeof(uint32_t));
+    uint32_t checksum = crc32c::Value(page); // 对page计算checksum
+    encode_fixed32_le(checksum_buf, checksum); // 对checksum进行固定的32位长度编码
+    page.emplace_back(checksum_buf, sizeof(uint32_t)); // 将checksum添加到page body之后
 
-    uint64_t offset = wblock->bytes_appended();
-    RETURN_IF_ERROR(wblock->appendv(&page[0], page.size()));
+    uint64_t offset = wblock->bytes_appended(); // 获取wblock中当前已经写入的数据位置（offset），即当前要写入page的起始位置
+    RETURN_IF_ERROR(wblock->appendv(&page[0], page.size())); // 通过wblock将当前page写入block
 
-    result->offset = offset;
-    result->size = wblock->bytes_appended() - offset;
+    result->offset = offset; // 获取当前page的起始位置，会通过参数result返回
+    result->size = wblock->bytes_appended() - offset; // 计算当前page的大小，会通过参数result返回
     return Status::OK();
 }
 

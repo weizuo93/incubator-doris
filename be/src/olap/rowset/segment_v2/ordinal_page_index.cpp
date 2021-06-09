@@ -27,30 +27,32 @@
 namespace doris {
 namespace segment_v2 {
 
+/*添加一条ordinal索引（其中保存当前page的起始行号和指向page的指针）*/
 void OrdinalIndexWriter::append_entry(ordinal_t ordinal, const PagePointer& data_pp) {
     std::string key;
-    KeyCoderTraits<OLAP_FIELD_TYPE_UNSIGNED_BIGINT>::full_encode_ascending(&ordinal, &key);
-    _page_builder->add(key, data_pp);
-    _last_pp = data_pp;
+    KeyCoderTraits<OLAP_FIELD_TYPE_UNSIGNED_BIGINT>::full_encode_ascending(&ordinal, &key); // 对当前数据page的行号信息进行编码，通过参数key传出
+    _page_builder->add(key, data_pp); // 将当前数据page的ordinal索引信息添加到ordinal索引page中
+    _last_pp = data_pp; // 更新成员变量_last_pp，记录最后一个page的ordinal索引
 }
 
+/*通过WritableBlock向block中追加ordinal索引*/
 Status OrdinalIndexWriter::finish(fs::WritableBlock* wblock, ColumnIndexMetaPB* meta) {
     CHECK(_page_builder->count() > 0) << "no entry has been added, filepath=" << wblock->path();
-    meta->set_type(ORDINAL_INDEX);
-    BTreeMetaPB* root_page_meta = meta->mutable_ordinal_index()->mutable_root_page();
+    meta->set_type(ORDINAL_INDEX); // 设置列的索引类型为ORDINAL_INDEX
+    BTreeMetaPB* root_page_meta = meta->mutable_ordinal_index()->mutable_root_page(); // 获取一级索引
 
-    if (_page_builder->count() == 1) {
+    if (_page_builder->count() == 1) { // 判断当前列的ordinal索引是否只有一个page
         // only one data page, no need to write index page
         root_page_meta->set_is_root_data_page(true);
         _last_pp.to_proto(root_page_meta->mutable_root_page());
     } else {
         OwnedSlice page_body;
         PageFooterPB page_footer;
-        _page_builder->finish(&page_body, &page_footer);
+        _page_builder->finish(&page_body, &page_footer); // 获取ordinal索引page的body，并设置page的footer
 
         // write index page (currently it's not compressed)
         PagePointer pp;
-        RETURN_IF_ERROR(PageIO::write_page(wblock, { page_body.slice() }, page_footer, &pp));
+        RETURN_IF_ERROR(PageIO::write_page(wblock, { page_body.slice() }, page_footer, &pp)); // 将page的footer以及checksum追加到page body之后，并通过WritableBlock把整个page写入block，page在block中的起始位置以及大小通过参数pp传回
 
         root_page_meta->set_is_root_data_page(false);
         pp.to_proto(root_page_meta->mutable_root_page());

@@ -56,32 +56,33 @@ void ZoneMapIndexWriter::add_values(const void* values, size_t count) {
     }
 }
 
+/*使用当前page的zone map更新当前列的zone map，并将当前page的zone map添加到成员变量_values中，成员变量_values中保存当前列中所有data page的zone map*/
 Status ZoneMapIndexWriter::flush() {
     // Update segment zone map.
-    if (_field->compare(_segment_zone_map.min_value, _page_zone_map.min_value) > 0) {
+    if (_field->compare(_segment_zone_map.min_value, _page_zone_map.min_value) > 0) { // 如果page zone map的最小值小于当前列的 zone map当前的最小值，则使用page zone map的最小值更新当前列的 zone map的最小值
         _field->type_info()->direct_copy(_segment_zone_map.min_value, _page_zone_map.min_value);
     }
-    if (_field->compare(_segment_zone_map.max_value, _page_zone_map.max_value) < 0) {
+    if (_field->compare(_segment_zone_map.max_value, _page_zone_map.max_value) < 0) { // 如果page zone map的最大值大于当前列的 zone map当前的最大值，则使用page zone map的最大值更新当前列的 zone map的最大值
         _field->type_info()->direct_copy(_segment_zone_map.max_value, _page_zone_map.max_value);
     }
-    if (_page_zone_map.has_null) {
+    if (_page_zone_map.has_null) { // 如果page zone map中有null值，则更新当前列的 zone map的has_null为true
         _segment_zone_map.has_null = true;
     }
-    if (_page_zone_map.has_not_null) {
+    if (_page_zone_map.has_not_null) { // 如果page zone map中有非null值，则更新当前列的 zone map的has_not_null为true
         _segment_zone_map.has_not_null = true;
     }
 
     ZoneMapPB zone_map_pb;
-    _page_zone_map.to_proto(&zone_map_pb, _field);
-    _reset_zone_map(&_page_zone_map);
+    _page_zone_map.to_proto(&zone_map_pb, _field); // 将page zone map转化化为PB
+    _reset_zone_map(&_page_zone_map); // reset成员变量_page_zone_map
 
     std::string serialized_zone_map;
-    bool ret = zone_map_pb.SerializeToString(&serialized_zone_map);
+    bool ret = zone_map_pb.SerializeToString(&serialized_zone_map); // 将PB格式的page zone map序列化为字符串
     if (!ret) {
         return Status::InternalError("serialize zone map failed");
     }
-    _estimated_size += serialized_zone_map.size() + sizeof(uint32_t);
-    _values.push_back(std::move(serialized_zone_map));
+    _estimated_size += serialized_zone_map.size() + sizeof(uint32_t); // 计算当前page zone map的大小
+    _values.push_back(std::move(serialized_zone_map)); // 将当前page的zone map添加到成员变量_values中
     return Status::OK();
 }
 
