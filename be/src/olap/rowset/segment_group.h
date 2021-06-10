@@ -83,6 +83,8 @@ public:
     // 检查index文件和data文件的有效性
     OLAPStatus validate();
 
+    bool all_segment_exist();
+
     // this function should be called after load
     bool check();
 

@@ -843,7 +843,7 @@ void Tablet::max_continuous_version_from_beginning(Version* version, VersionHash
 }
 
 void Tablet::_max_continuous_version_from_beginning_unlocked(Version* version,
-                                                             VersionHash* v_hash) const {
+                                                             VersionHash* v_hash) {
     std::vector<pair<Version, VersionHash>> existing_versions;
     for (auto& rs : _tablet_meta->all_rs_metas()) {
         existing_versions.emplace_back(rs->version(), rs->version_hash());
@@ -861,6 +861,15 @@ void Tablet::_max_continuous_version_from_beginning_unlocked(Version* version,
         if (existing_versions[i].first.first > max_continuous_version.second + 1) {
             break;
         }
+
+        Version ver = existing_versions[i].first;
+        RowsetSharedPtr rowset = _rs_version_map.at(ver);
+        if (!rowset->all_segment_exist()) {
+            StorageEngine::instance()->add_unused_rowset(rowset);
+            _rs_version_map.erase(ver);
+            break;
+        }
+
         max_continuous_version = existing_versions[i].first;
         max_continuous_version_hash = existing_versions[i].second;
     }

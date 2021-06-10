@@ -409,4 +409,13 @@ OLAPStatus AlphaRowset::reset_sizeinfo() {
     return OLAP_SUCCESS;
 }
 
+bool AlphaRowset::all_segment_exist() {
+    for (auto& segment_group : _segment_groups) {
+        if(!segment_group->all_segment_exist()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace doris

@@ -458,6 +458,20 @@ OLAPStatus SegmentGroup::validate() {
     return OLAP_SUCCESS;
 }
 
+
+bool SegmentGroup::all_segment_exist() {
+    for (uint32_t seg_id = 0; seg_id < _num_segments; ++seg_id) {
+        // get full path for one segment
+        string index_path = construct_index_file_path(seg_id);
+        string data_path = construct_data_file_path(seg_id);
+
+        if (!FileUtils::check_exist(index_path) || ! !FileUtils::check_exist(data_path)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool SegmentGroup::check() {
     // if the segment group is converted from old files, _empty == false but _num_segments == 0
     if (_empty && (_num_segments > 0 || !zero_num_rows())) {

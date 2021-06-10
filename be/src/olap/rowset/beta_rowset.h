@@ -62,6 +62,8 @@ public:
 
     bool check_path(const std::string& path) override;
 
+    bool all_segment_exist() override;
+
 protected:
     BetaRowset(const TabletSchema* schema, std::string rowset_path,
                RowsetMetaSharedPtr rowset_meta);

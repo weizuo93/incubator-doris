@@ -260,7 +260,7 @@ private:
     bool _contains_rowset(const RowsetId rowset_id);
     OLAPStatus _contains_version(const Version& version);
     void _max_continuous_version_from_beginning_unlocked(Version* version,
-                                                         VersionHash* v_hash) const;
+                                                         VersionHash* v_hash);
     RowsetSharedPtr _rowset_with_largest_size();
     /// Delete stale rowset by version. This method not only delete the version in expired rowset map,
     /// but also delete the version in rowset meta vector.
