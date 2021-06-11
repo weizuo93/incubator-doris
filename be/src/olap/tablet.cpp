@@ -865,6 +865,7 @@ void Tablet::_max_continuous_version_from_beginning_unlocked(Version* version,
         Version ver = existing_versions[i].first;
         RowsetSharedPtr rowset = _rs_version_map.at(ver);
         if (!rowset->all_segment_exist()) {
+            LOG(INFO) << "There are segments missing. tablet: " << tablet_id() << ", rowset: " << rowset->rowset_id() << ".";
             StorageEngine::instance()->add_unused_rowset(rowset);
             _rs_version_map.erase(ver);
             break;
