@@ -447,7 +447,7 @@ Status ThreadPool::do_submit(std::shared_ptr<Runnable> r, ThreadPoolToken* token
             }
             // If we failed to create a thread, but there are still some other
             // worker threads, log a warning message and continue.
-            LOG(ERROR) << "Thread pool failed to create thread: " << status.to_string();
+            LOG(WARNING) << "Thread pool failed to create thread: " << status.to_string();
         }
     }
 
@@ -609,7 +609,6 @@ void ThreadPool::check_not_pool_thread_unlocked() {
 
 Status ThreadPool::set_min_threads(int min_threads) {
     if (min_threads <= _max_threads) {
-        int old_min_threads = _min_threads;
         _min_threads = min_threads;
         if (min_threads > _num_threads + _num_threads_pending_start) {
             int addition_threads = min_threads - _num_threads - _num_threads_pending_start;
@@ -618,7 +617,7 @@ Status ThreadPool::set_min_threads(int min_threads) {
                 Status status = create_thread();
                 if (!status.ok()) {
                     _num_threads_pending_start--;
-                    LOG(ERROR) << "Thread pool failed to create thread: " << status.to_string();
+                    LOG(WARNING) << "Thread pool failed to create thread: " << status.to_string();
                     return status;
                 }
             }
