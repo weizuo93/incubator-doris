@@ -838,6 +838,7 @@ ASSERT_TRUE(_pool->set_max_threads(4).ok());
 ASSERT_EQ(4, _pool->max_threads());
 latch_1.count_down();
 latch_2.count_down();
+SleepFor(MonoDelta::FromMilliseconds(500));
 ASSERT_EQ(4, _pool->num_threads());
 ASSERT_TRUE(_pool->submit(SlowTask::new_slow_task(&latch_7)).ok());
 ASSERT_EQ(4, _pool->num_threads());
@@ -853,6 +854,7 @@ latch_5.count_down();
 latch_6.count_down();
 latch_7.count_down();
 latch_8.count_down();
+SleepFor(MonoDelta::FromMilliseconds(500));
 ASSERT_EQ(2, _pool->num_threads());
 
 _pool->wait();
