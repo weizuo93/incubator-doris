@@ -271,7 +271,7 @@ private:
     // Number of threads currently running.
     //
     // Protected by _lock.
-    int _num_threads;
+    AtomicInt32 _num_threads;
 
     // Number of threads which are in the process of starting.
     // When these threads start, they will decrement this counter and
@@ -289,7 +289,7 @@ private:
     // indirectly (_tokens).
     //
     // Protected by _lock.
-    int _total_queued_tasks;
+    AtomicInt32 _total_queued_tasks;
 
     // All allocated tokens.
     //

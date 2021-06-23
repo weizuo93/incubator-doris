@@ -630,6 +630,19 @@ Status ThreadPool::set_min_threads(int min_threads) {
 Status ThreadPool::set_max_threads(int max_threads) {
     if (_min_threads <= max_threads) {
         _max_threads = max_threads;
+        if (_max_threads > _num_threads - _num_threads_pending_start) {
+            int addition_threads = _max_threads - _num_threads - _num_threads_pending_start;
+            addition_threads = std::min(addition_threads, _total_queued_tasks);
+            _num_threads_pending_start += addition_threads;
+            for (int i = 0; i < addition_threads; i++) {
+                Status status = create_thread();
+                if (!status.ok()) {
+                    _num_threads_pending_start--;
+                    LOG(WARNING) << "Thread pool failed to create thread: " << status.to_string();
+                    return status;
+                }
+            }
+        }
         return Status::OK();
     }
     return Status::InternalError("set thread pool max_threads failed");
