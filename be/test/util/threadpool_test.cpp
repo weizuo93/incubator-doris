@@ -843,7 +843,6 @@ ASSERT_EQ(4, _pool->num_threads());
 ASSERT_TRUE(_pool->set_min_threads(2).ok());
 ASSERT_EQ(2, _pool->min_threads());
 
-latch_3.count_down();
 latch_4.count_down();
 latch_5.count_down();
 latch_6.count_down();
