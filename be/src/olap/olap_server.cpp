@@ -342,19 +342,19 @@ void StorageEngine::_compaction_tasks_producer_callback() {
                       << ", num_total_queued_tasks: " << _compaction_thread_pool->num_total_queued_tasks();
 
             if(_compaction_thread_pool->max_threads() != config::max_compaction_threads) {
+                int old_max_threads = _compaction_thread_pool->max_threads();
                 Status status = _compaction_thread_pool->set_max_threads(config::max_compaction_threads);
                 if (status.ok()) {
                     LOG(INFO) << "update compaction thread pool max_threads from "
-                              << _compaction_thread_pool->max_threads() << " to "
-                              << config::max_compaction_threads;
+                              << old_max_threads << " to " << config::max_compaction_threads;
                 }
             }
             if(_compaction_thread_pool->min_threads() != config::max_compaction_threads) {
+                int old_min_threads = _compaction_thread_pool->min_threads();
                 Status status = _compaction_thread_pool->set_min_threads(config::max_compaction_threads);
                 if (status.ok()) {
                     LOG(INFO) << "update compaction thread pool min_threads from "
-                              << _compaction_thread_pool->min_threads() << " to "
-                              << config::max_compaction_threads;
+                              << old_min_threads << " to " << config::max_compaction_threads;
                 }
             }
 
