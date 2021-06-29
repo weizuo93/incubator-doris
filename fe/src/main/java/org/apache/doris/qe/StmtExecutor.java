@@ -609,11 +609,11 @@ public class StmtExecutor {
             sendFields(queryStmt.getColLabels(), queryStmt.getResultExprs());
         }
         while (true) {
-            batch = coord.getNext();
+            batch = coord.getNext(); // 通过coordinator获取一个batch的结果数据
             // for outfile query, there will be only one empty batch send back with eos flag
             if (batch.getBatch() != null && !isOutfileQuery) {
                 for (ByteBuffer row : batch.getBatch().getRows()) {
-                    channel.sendOnePacket(row);
+                    channel.sendOnePacket(row); // 逐行将数据发出
                 }            
                 context.updateReturnRows(batch.getBatch().getRows().size());    
             }

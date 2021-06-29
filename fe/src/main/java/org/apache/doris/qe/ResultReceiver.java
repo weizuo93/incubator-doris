@@ -58,17 +58,18 @@ public class ResultReceiver {
         this.timeoutTs = System.currentTimeMillis() + timeoutMs;
     }
 
+    /*获取一个batch的数据*/
     public RowBatch getNext(Status status) throws TException {
         if (isDone) {
             return null;
         }
-        final RowBatch rowBatch = new RowBatch();
+        final RowBatch rowBatch = new RowBatch(); // 创建RowBatch对象，用于存放接收到的batch数据
         try {
             while (!isDone && !isCancel) {
-                PFetchDataRequest request = new PFetchDataRequest(finstId);
+                PFetchDataRequest request = new PFetchDataRequest(finstId); // 创建PFetchDataRequest对象
 
                 currentThread = Thread.currentThread();
-                Future<PFetchDataResult> future = BackendServiceProxy.getInstance().fetchDataAsync(address, request);
+                Future<PFetchDataResult> future = BackendServiceProxy.getInstance().fetchDataAsync(address, request); // 异步获取一个batch数据
                 PFetchDataResult pResult = null;
                 while (pResult == null) {
                     long currentTs = System.currentTimeMillis();
@@ -76,7 +77,7 @@ public class ResultReceiver {
                         throw new TimeoutException("query timeout");
                     }
                     try {
-                        pResult = future.get(timeoutTs - currentTs, TimeUnit.MILLISECONDS);
+                        pResult = future.get(timeoutTs - currentTs, TimeUnit.MILLISECONDS); // 阻塞等待异步获取数据batch结束，如果在指定时间没有获取到数据则会抛出异常
                     } catch (InterruptedException e) {
                         // continue to get result
                         LOG.info("future get interrupted Exception");
@@ -101,15 +102,15 @@ public class ResultReceiver {
                 }
     
                 packetIdx++;
-                isDone = pResult.eos;
+                isDone = pResult.eos; // 更新是否获取数据结束的标志
 
-                byte[] serialResult = request.getSerializedResult();
+                byte[] serialResult = request.getSerializedResult(); // 获取batch数据的序列化结果
                 if (serialResult != null && serialResult.length > 0) {
                     TResultBatch resultBatch = new TResultBatch();
                     TDeserializer deserializer = new TDeserializer();
-                    deserializer.deserialize(resultBatch, serialResult);
-                    rowBatch.setBatch(resultBatch);
-                    rowBatch.setEos(pResult.eos);
+                    deserializer.deserialize(resultBatch, serialResult); // 将获取到的batch数据反序列化
+                    rowBatch.setBatch(resultBatch); // 将获取到的batch数据添加到rowBatch
+                    rowBatch.setEos(pResult.eos);   // 设置数据是否传输完成的标志
                     return rowBatch;
                 }
             }

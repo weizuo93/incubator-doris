@@ -76,6 +76,7 @@ public class BackendServiceProxy {
         return INSTANCE;
     }
 
+    /*通过网络地址获取BE对应PBackendService对象*/
     private synchronized PBackendService getProxy(TNetworkAddress address) {
         PBackendService service = serviceMap.get(address);
         if (service != null) {
@@ -152,11 +153,12 @@ public class BackendServiceProxy {
         }
     }
 
+    /*异步获取一个batch数据*/
     public Future<PFetchDataResult> fetchDataAsync(
             TNetworkAddress address, PFetchDataRequest request) throws RpcException {
         try {
-            PBackendService service = getProxy(address);
-            return service.fetchDataAsync(request);
+            PBackendService service = getProxy(address); // 通过网络地址获取BE对应PBackendService对象
+            return service.fetchDataAsync(request); // 异步获取一个batch数据
         } catch (Throwable e) {
             LOG.warn("fetch data catch a exception, address={}:{}",
                     address.getHostname(), address.getPort(), e);

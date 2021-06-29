@@ -640,6 +640,7 @@ public class Coordinator {
         }
     }
 
+    /*获取一个batch的数据*/
     public RowBatch getNext() throws Exception {
         if (receiver == null) {
             throw new UserException("There is no receiver.");
@@ -648,7 +649,7 @@ public class Coordinator {
         RowBatch resultBatch;
         Status status = new Status();
 
-        resultBatch = receiver.getNext(status);
+        resultBatch = receiver.getNext(status); // 获取一个batch的数据
         if (!status.ok()) {
             LOG.warn("get next fail, need cancel. query id: {}", DebugUtil.printId(queryId));
         }
