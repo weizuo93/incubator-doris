@@ -209,6 +209,7 @@ private:
 };
 
 inline void* ExprContext::get_value(TupleRow* row) {
+    LOG(INFO) << "Execute Plan Test. ExprContext::get_value(TupleRow* row).";
     if (_root->is_slotref()) {
         return SlotRef::get_value(_root, row);
     }

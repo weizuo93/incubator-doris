@@ -154,6 +154,7 @@ void BackendService::transmit_data(TTransmitDataResult& return_val,
 }
 
 void BackendService::fetch_data(TFetchDataResult& return_val, const TFetchDataParams& params) {
+    LOG(INFO) << "Execute Plan Test. BackendService::fetch_data().";
     // maybe hang in this function
     Status status = _exec_env->result_mgr()->fetch_data(params.fragment_instance_id, &return_val);
     status.set_t_status(&return_val);

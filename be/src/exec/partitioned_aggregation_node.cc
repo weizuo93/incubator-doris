@@ -353,6 +353,7 @@ Status PartitionedAggregationNode::get_next(RuntimeState* state, RowBatch* row_b
     // reference issue #5466
     // TODO: if ancestor node don't have a no-spilling blocking node, we could avoid a deep_copy
     // we should a flag indicate this node don't have to deep_copy
+    LOG(INFO) << "Execute Plan Test. PartitionedAggregationNode::get_next().";
     DCHECK_EQ(row_batch->num_rows(), 0);
     RowBatch batch(row_batch->row_desc(), row_batch->capacity(), _mem_tracker.get());
     int first_row_idx = batch.num_rows();
@@ -411,6 +412,7 @@ Status PartitionedAggregationNode::CopyStringData(const SlotDescriptor& slot_des
 
 Status PartitionedAggregationNode::GetNextInternal(RuntimeState* state, RowBatch* row_batch,
                                                    bool* eos) {
+    LOG(INFO) << "Execute Plan Test. PartitionedAggregationNode::GetNextInternal().";
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     RETURN_IF_ERROR(exec_debug_action(TExecNodePhase::GETNEXT));
     RETURN_IF_CANCELLED(state);
@@ -522,6 +524,7 @@ Status PartitionedAggregationNode::GetRowsFromPartition(RuntimeState* state, Row
 }
 
 Status PartitionedAggregationNode::GetRowsStreaming(RuntimeState* state, RowBatch* out_batch) {
+    LOG(INFO) << "Execute Plan Test. PartitionedAggregationNode::GetRowsStreaming().";
     DCHECK(!child_eos_);
     DCHECK(is_streaming_preagg_);
 
@@ -1036,6 +1039,7 @@ void PartitionedAggregationNode::InitAggSlots(const vector<NewAggFnEvaluator*>& 
 
 void PartitionedAggregationNode::UpdateTuple(NewAggFnEvaluator** agg_fn_evals, Tuple* tuple,
                                              TupleRow* row, bool is_merge) {
+    LOG(INFO) << "Execute Plan Test. PartitionedAggregationNode::UpdateTuple().";
     DCHECK(tuple != NULL || agg_fns_.empty());
     for (int i = 0; i < agg_fns_.size(); ++i) {
         if (is_merge) {

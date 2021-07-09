@@ -164,6 +164,7 @@ Status PartitionedAggregationNode::ProcessBatchStreaming(bool needs_serialize, R
                                                          RowBatch* out_batch,
                                                          PartitionedHashTableCtx* ht_ctx,
                                                          int remaining_capacity[PARTITION_FANOUT]) {
+    LOG(INFO) << "Execute Plan Test. PartitionedAggregationNode::ProcessBatchStreaming().";
     DCHECK(is_streaming_preagg_);
     DCHECK_EQ(out_batch->num_rows(), 0);
     DCHECK_LE(in_batch->num_rows(), out_batch->capacity());
@@ -217,6 +218,7 @@ bool PartitionedAggregationNode::TryAddToHashTable(PartitionedHashTableCtx* ht_c
                                                    PartitionedHashTable* hash_tbl, TupleRow* in_row,
                                                    uint32_t hash, int* remaining_capacity,
                                                    Status* status) {
+    LOG(INFO) << "Execute Plan Test. PartitionedAggregationNode::TryAddToHashTable().";
     DCHECK(remaining_capacity != NULL);
     DCHECK_EQ(hash_tbl, partition->hash_tbl.get());
     DCHECK_GE(*remaining_capacity, 0);

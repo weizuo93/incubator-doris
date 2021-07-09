@@ -66,7 +66,8 @@ public class ResultReceiver {
                         .setFinstId(finstId)
                         .setRespInAttachment(false)
                         .build();
-                
+
+                LOG.info("Execute Plan Test. ResultReceiver.getNext().");
                 currentThread = Thread.currentThread();
                 Future<InternalService.PFetchDataResult> future = BackendServiceProxy.getInstance().fetchDataAsync(address, request);
                 InternalService.PFetchDataResult pResult = null;

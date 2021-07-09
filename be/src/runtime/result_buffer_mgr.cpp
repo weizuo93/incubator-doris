@@ -90,6 +90,7 @@ boost::shared_ptr<BufferControlBlock> ResultBufferMgr::find_control_block(
 }
 
 Status ResultBufferMgr::fetch_data(const TUniqueId& query_id, TFetchDataResult* result) {
+    LOG(INFO) << "Execute Plan Test. ResultBufferMgr::fetch_data(const TUniqueId& query_id, TFetchDataResult* result).";
     boost::shared_ptr<BufferControlBlock> cb = find_control_block(query_id);
 
     if (NULL == cb) {
@@ -101,6 +102,7 @@ Status ResultBufferMgr::fetch_data(const TUniqueId& query_id, TFetchDataResult* 
 }
 
 void ResultBufferMgr::fetch_data(const PUniqueId& finst_id, GetResultBatchCtx* ctx) {
+    LOG(INFO) << "Execute Plan Test. ResultBufferMgr::fetch_data(const PUniqueId& finst_id, GetResultBatchCtx* ctx).";
     TUniqueId tid;
     tid.__set_hi(finst_id.hi());
     tid.__set_lo(finst_id.lo());

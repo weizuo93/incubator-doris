@@ -296,8 +296,10 @@ Status ExecNode::create_tree_helper(RuntimeState* state, ObjectPool* pool,
     // assert(parent != NULL || (node_idx == 0 && root_expr != NULL));
     if (parent != NULL) {
         parent->_children.push_back(node);
+        LOG(INFO) << "fragment tree test. node id:" << node->id() << ", node type: " << node->type() << ", parent id: " << parent->id() << ", parent type: " << parent->type() ;
     } else {
         *root = node;
+        LOG(INFO) << "fragment tree test. root node. node id: " << node->id() << ", node type: " << node->type();
     }
 
     for (int i = 0; i < num_children; i++) {

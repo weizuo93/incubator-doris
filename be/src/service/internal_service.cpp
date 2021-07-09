@@ -176,6 +176,7 @@ template <typename T>
 void PInternalServiceImpl<T>::fetch_data(google::protobuf::RpcController* cntl_base,
                                          const PFetchDataRequest* request, PFetchDataResult* result,
                                          google::protobuf::Closure* done) {
+    LOG(INFO) << "Execute Plan Test. PInternalServiceImpl::fetch_data().";
     brpc::Controller* cntl = static_cast<brpc::Controller*>(cntl_base);
     bool resp_in_attachment = request->has_resp_in_attachment() ? request->resp_in_attachment() : true;
     GetResultBatchCtx* ctx = new GetResultBatchCtx(cntl, resp_in_attachment, result, done);

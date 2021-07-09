@@ -252,6 +252,7 @@ bool ExprContext::is_nullable() {
 }
 
 void* ExprContext::get_value(Expr* e, TupleRow* row) {
+    LOG(INFO) << "Execute Plan Test. ExprContext::get_value(Expr* e, TupleRow* row).";
     switch (e->_type.type) {
     case TYPE_NULL: {
         return NULL;

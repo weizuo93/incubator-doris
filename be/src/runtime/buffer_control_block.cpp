@@ -95,6 +95,7 @@ Status BufferControlBlock::init() {
 }
 
 Status BufferControlBlock::add_batch(TFetchDataResult* result) {
+    LOG(INFO) << "Execute Plan Test. BufferControlBlock::add_batch().";
     std::unique_lock<std::mutex> l(_lock);
 
     if (_is_cancelled) {
@@ -126,6 +127,7 @@ Status BufferControlBlock::add_batch(TFetchDataResult* result) {
 }
 
 Status BufferControlBlock::get_batch(TFetchDataResult* result) {
+    LOG(INFO) << "Execute Plan Test. BufferControlBlock::get_batch(TFetchDataResult* result).";
     TFetchDataResult* item = NULL;
     {
         std::unique_lock<std::mutex> l(_lock);
@@ -172,6 +174,7 @@ Status BufferControlBlock::get_batch(TFetchDataResult* result) {
 }
 
 void BufferControlBlock::get_batch(GetResultBatchCtx* ctx) {
+    LOG(INFO) << "Execute Plan Test. BufferControlBlock::get_batch(GetResultBatchCtx* ctx).";
     std::lock_guard<std::mutex> l(_lock);
     if (!_status.ok()) {
         ctx->on_failure(_status);

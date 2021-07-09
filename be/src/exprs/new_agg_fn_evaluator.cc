@@ -396,6 +396,7 @@ inline void NewAggFnEvaluator::set_any_val(const void* slot, const TypeDescripto
 }
 
 void NewAggFnEvaluator::Update(const TupleRow* row, Tuple* dst, void* fn) {
+    LOG(INFO) << "Execute Plan Test. NewAggFnEvaluator::Update().";
     if (fn == nullptr) return;
 
     const SlotDescriptor& slot_desc = intermediate_slot_desc();

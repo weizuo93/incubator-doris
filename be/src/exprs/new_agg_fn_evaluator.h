@@ -269,6 +269,7 @@ private:
 };
 
 inline void NewAggFnEvaluator::Add(const TupleRow* row, Tuple* dst) {
+    LOG(INFO) << "Execute Plan Test. NewAggFnEvaluator::TryAddToHashTable().";
     agg_fn_ctx_->impl()->increment_num_updates();
     Update(row, dst, agg_fn_.merge_or_update_fn());
 }

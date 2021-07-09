@@ -721,7 +721,7 @@ Status OlapTableSink::send(RuntimeState* state, RowBatch* input_batch) {
                << Tuple::to_string(tuple, *_output_tuple_desc);
 #if BE_TEST
             LOG(INFO) << ss.str();
-#else
+#elseq
             state->append_error_msg_to_file("", ss.str());
 #endif
             _number_filtered_rows++;

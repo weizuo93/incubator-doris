@@ -100,6 +100,7 @@ public class BackendServiceProxy {
     public Future<InternalService.PFetchDataResult> fetchDataAsync(
             TNetworkAddress address, InternalService.PFetchDataRequest request) throws RpcException {
         try {
+            LOG.info("Execute Plan Test. BackendServiceProxy.fetchDataAsync().");
             final BackendServiceClient client = getProxy(address);
             return client.fetchDataAsync(request);
         } catch (Throwable e) {

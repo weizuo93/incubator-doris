@@ -21,6 +21,8 @@ import org.apache.doris.common.Config;
 import org.apache.doris.proto.InternalService;
 import org.apache.doris.proto.PBackendServiceGrpc;
 import org.apache.doris.thrift.TNetworkAddress;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.concurrent.Future;
 
@@ -28,6 +30,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.netty.NettyChannelBuilder;
 
 public class BackendServiceClient {
+    private static final Logger LOG = LogManager.getLogger(BackendServiceClient.class);
     private static final int MAX_RETRY_NUM = 3;
     private final PBackendServiceGrpc.PBackendServiceFutureStub stub;
     private final PBackendServiceGrpc.PBackendServiceBlockingStub blockingStub;
@@ -45,6 +48,7 @@ public class BackendServiceClient {
 
     public Future<InternalService.PExecPlanFragmentResult> execPlanFragmentAsync(
             InternalService.PExecPlanFragmentRequest request) {
+        LOG.info("Execute Plan Test. BackendServiceClient.execPlanFragmentAsync().");
         return stub.execPlanFragment(request);
     }
 
@@ -54,6 +58,7 @@ public class BackendServiceClient {
     }
 
     public Future<InternalService.PFetchDataResult> fetchDataAsync(InternalService.PFetchDataRequest request) {
+        LOG.info("Execute Plan Test. BackendServiceClient.fetchDataAsync().");
         return stub.fetchData(request);
     }
 

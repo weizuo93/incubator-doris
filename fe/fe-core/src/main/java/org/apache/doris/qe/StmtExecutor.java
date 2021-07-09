@@ -811,6 +811,7 @@ public class StmtExecutor implements ProfileWriter {
         coord.exec();
         plannerProfile.setQueryScheduleFinishTime();
         writeProfile(false);
+        LOG.info("Execute Plan Test. StmtExecutor.handleQueryStmt().");
         while (true) {
             batch = coord.getNext();
             // for outfile query, there will be only one empty batch send back with eos flag

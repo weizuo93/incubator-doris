@@ -201,6 +201,7 @@ Status MysqlResultWriter::_add_one_row(TupleRow* row) {
 }
 
 Status MysqlResultWriter::append_row_batch(const RowBatch* batch) {
+    LOG(INFO) << "Execute Plan Test. MysqlResultWriter::append_row_batch().";
     SCOPED_TIMER(_append_row_batch_timer);
     if (NULL == batch || 0 == batch->num_rows()) {
         return Status::OK();

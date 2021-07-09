@@ -151,6 +151,7 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request,
 
     // set up plan
     DCHECK(request.__isset.fragment);
+    LOG(INFO) << "fragment tree test. fragment id: " << params.fragment_instance_id;
     RETURN_IF_ERROR(ExecNode::create_tree(_runtime_state.get(), obj_pool(), request.fragment.plan,
                                           *desc_tbl, &_plan));
     _runtime_state->set_fragment_root_id(_plan->id());

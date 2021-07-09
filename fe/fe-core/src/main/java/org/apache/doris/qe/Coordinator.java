@@ -693,6 +693,7 @@ public class Coordinator {
         RowBatch resultBatch;
         Status status = new Status();
 
+        LOG.info("Execute Plan Test. Coordinator.getNext().");
         resultBatch = receiver.getNext(status);
         if (!status.ok()) {
             LOG.warn("get next fail, need cancel. query id: {}", DebugUtil.printId(queryId));
