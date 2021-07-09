@@ -485,7 +485,7 @@ public class Coordinator {
                                     fragment.getFragmentId().asInt(), jobId);
                         }
                     }
-                    futures.add(Pair.create(execState, execState.execRemoteFragmentAsync()));
+                    futures.add(Pair.create(execState, execState.execRemoteFragmentAsync())); // 异步执行execState.execRemoteFragmentAsync()来下发执行计划到BE，并将返回的Future对象添加到List变量futures
 
                     backendId++;
                 }
@@ -494,7 +494,7 @@ public class Coordinator {
                     String errMsg = null;
                     try {
                         PExecPlanFragmentResult result = pair.second.get(Config.remote_fragment_exec_timeout_ms,
-                                                                         TimeUnit.MILLISECONDS);
+                                                                         TimeUnit.MILLISECONDS); // 等待执行计划提交并在BE端开始执行
                         code = TStatusCode.findByValue(result.status.status_code);
                         if (result.status.error_msgs != null && !result.status.error_msgs.isEmpty()) {
                             errMsg = result.status.error_msgs.get(0);
@@ -1460,6 +1460,7 @@ public class Coordinator {
             return true;
         }
 
+        /*异步执行fragment*/
         public Future<PExecPlanFragmentResult> execRemoteFragmentAsync() throws TException, RpcException {
             TNetworkAddress brpcAddress = null;
             try {
@@ -1469,7 +1470,7 @@ public class Coordinator {
             }
             this.initiated = true;
             try {
-                return BackendServiceProxy.getInstance().execPlanFragmentAsync(brpcAddress, rpcParams);
+                return BackendServiceProxy.getInstance().execPlanFragmentAsync(brpcAddress, rpcParams); // 异步执行fragment
             } catch (RpcException e) {
                 // DO NOT throw exception here, return a complete future with error code,
                 // so that the following logic will cancel the fragment.

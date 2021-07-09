@@ -68,7 +68,7 @@ public class Planner {
         if (singleNodePlanner == null) {
             return Lists.newArrayList();
         }
-        return singleNodePlanner.getScanNodes();
+        return singleNodePlanner.getScan
     }
 
     /*根据stmt创建plan fragments，保存在当前Planner对象的List成员变量fragments中，List中的前一个fragment可以消费后一个fragment的输出*/

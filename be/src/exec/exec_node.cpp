@@ -275,6 +275,7 @@ void ExecNode::add_runtime_exec_option(const std::string& str) {
 /*根据fragment的plan创建fragment的tree结构，其中会创建不同的节点（比如：OLAP_SCAN_NODE）*/
 Status ExecNode::create_tree(RuntimeState* state, ObjectPool* pool, const TPlan& plan,
                             const DescriptorTbl& descs, ExecNode** root) {
+    // 树的节点在plan.nodes中按照前序遍历的顺序存放（每个节点存储了自己子节点的个数），该函数创建树结构，实际上是根据前序序列恢复出树结构
     if (plan.nodes.size() == 0) { // 类TPlan会根据Thrift在gensrc/build/gen_cpp/目录下生成的PlanNodes_types.h文件中定义，其中成员变量nodes的类型为std::vector<TPlanNode>
         *root = NULL;
         return Status::OK();
@@ -283,7 +284,7 @@ Status ExecNode::create_tree(RuntimeState* state, ObjectPool* pool, const TPlan&
     int node_idx = 0;
     RETURN_IF_ERROR(create_tree_helper(state, pool, plan.nodes, descs, NULL, &node_idx, root)); // 根据plan.nodes创建fragment的tree结构（parent为NULL，因此root返回根节点）
 
-    if (node_idx + 1 != plan.nodes.size()) {
+    if (node_idx + 1 != plan.nodes.size()) { // 判断创建的树中是否包含了Thrift发送的全部节点
         // TODO: print thrift msg for diagnostic purposes.
         return Status::InternalError(
                    "Plan tree only partially reconstructed. Not all thrift nodes were used.");

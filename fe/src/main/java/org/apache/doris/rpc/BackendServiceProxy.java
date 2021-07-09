@@ -90,6 +90,7 @@ public class BackendServiceProxy {
         return service;
     }
 
+    /*异步执行fragment*/
     public Future<PExecPlanFragmentResult> execPlanFragmentAsync(
             TNetworkAddress address, TExecPlanFragmentParams tRequest)
             throws TException, RpcException {
@@ -97,7 +98,7 @@ public class BackendServiceProxy {
         pRequest.setRequest(tRequest);
         try {
             final PBackendService service = getProxy(address);
-            return service.execPlanFragmentAsync(pRequest);
+            return service.execPlanFragmentAsync(pRequest); // 异步执行fragment
         } catch (NoSuchElementException e) {
             try {
                 // retry
